@@ -8,6 +8,15 @@ test and drives. Developed and tested in a patched 86Box before touching the rea
 Status 2026-10-12: all emulator tests pass (`test/run_all.sh`). Not yet run on the real board. POST codes
 for a POST card: [POSTCODES.md](POSTCODES.md); everything that is not C: [ASM.md](ASM.md).
 
+## Screenshots (86Box)
+
+| | |
+|---|---|
+| ![Setup main menu](screenshot/MENU.png) | ![Chipset features](screenshot/CHIPSET.png) |
+| ![CPU, cache, memory](screenshot/CPU-CACHE-MEMORY.png) | ![IDE drives](screenshot/IDE-DRIVES.png) |
+| ![ISA resources and IRQ map](screenshot/ISA-RESOURCES-AND-IRQ-MAP.png) | ![Chipset registers](screenshot/CHIPSET-REGISTERS.png) |
+| ![Memory read speed](screenshot/MEMORY-READ-SPEED.png) | |
+
 ## Does it fit in the 128 KiB flash? Yes
 
 `out/newbios.rom` (CBFS, sizes in bytes):
