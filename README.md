@@ -12,9 +12,10 @@ for a POST card: [POSTCODES.md](POSTCODES.md); everything that is not C: [ASM.md
 
 | | |
 |---|---|
-| ![Setup main menu](screenshot/MENU.png) | ![Chipset features](screenshot/CHIPSET.png) |
-| ![CPU, cache, memory](screenshot/CPU-CACHE-MEMORY.png) | ![IDE drives](screenshot/IDE-DRIVES.png) |
-| ![ISA resources and IRQ map](screenshot/ISA-RESOURCES-AND-IRQ-MAP.png) | ![Chipset registers](screenshot/CHIPSET-REGISTERS.png) |
+| ![POST screen](screenshot/STARTUP.png) | ![Setup main menu](screenshot/MENU.png) |
+| ![Chipset features](screenshot/CHIPSET.png) | ![CPU, cache, memory](screenshot/CPU-CACHE-MEMORY.png) |
+| ![PCI devices](screenshot/PCI-DEVICES.png) | ![ISA resources and IRQ map](screenshot/ISA-RESOURCES-AND-IRQ-MAP.png) |
+| ![IDE drives](screenshot/IDE-DRIVES.png) | ![Chipset registers](screenshot/CHIPSET-REGISTERS.png) |
 | ![Memory read speed](screenshot/MEMORY-READ-SPEED.png) | |
 
 ## Does it fit in the 128 KiB flash? Yes
