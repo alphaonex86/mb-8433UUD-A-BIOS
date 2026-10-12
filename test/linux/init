@@ -1,0 +1,10 @@
+#!/bin/sh
+/bin/busybox --install -s /bin
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+echo "LINUX-TEST: $(uname -r) on $(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2)"
+grep MemTotal /proc/meminfo
+cat /proc/partitions
+ls /sys/class/net
+echo LINUX-TEST-OK
+exec sh

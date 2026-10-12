@@ -1,0 +1,1751 @@
+diff --git a/src/arch/486/assembly_entry.S b/src/arch/486/assembly_entry.S
+index 7f4cd5d..b96c258 100644
+--- a/src/arch/486/assembly_entry.S
++++ b/src/arch/486/assembly_entry.S
+@@ -19,10 +19,17 @@
+ .code32
+ #endif
+ 
++/*
++ * Romstage entry point. The bootblock jumps here through prog_run() and
++ * never gets control back. State: 32-bit flat protected mode, cache-as-RAM
++ * active, no IDT, code running in place from flash (cbfstool relocated
++ * romstage to its CBFS address in the ROM).
++ */
+ .section ".text._start", "ax", @progbits
+ .global _start
+ _start:
+ 	/* Migrate GDT to this text segment */
++	/* (load GDTR with romstage's own copy of the ROM GDT, gdt_init.S) */
+ #if ENV_X86_64
+ 	call	gdt_init64
+ #else
+@@ -31,9 +38,12 @@ _start:
+ 
+ /*rdtsc*/
+ 	/* reset stack pointer to CAR/EARLYRAM stack */
++	/* (top of the CAR stack again: the bootblock frames are dead) */
+ 	mov	$_STACK_TOP, %esp
+ 
+ 	/* clear .bss section as it is not shared */
++	/* (car.ld puts this stage's .bss in CAR at _bss.._ebss; rep stosl
++	 * stores EAX = 0 to ECX dwords at ES:EDI) */
+ #if ENV_SEPARATE_BSS
+ 	cld
+ 	xor	%eax, %eax
+@@ -55,6 +65,7 @@ debug_spinloop:
+ 	jz	debug_spinloop
+ #endif
+ 
++	/* 16-byte stack alignment for the C code. */
+ 	andl	$0xfffffff0, %esp
+ #if CONFIG(IDT_IN_EVERY_STAGE)
+ 	call	exception_init
+@@ -63,6 +74,8 @@ debug_spinloop:
+ #if CONFIG(ASAN_IN_ROMSTAGE)
+ 	call	asan_init
+ #endif
++	/* C: arch/486/romstage.c -> romstage_main(): DRAM and chipset init,
++	 * then postcar is loaded into RAM and run. */
+ 	call	car_stage_entry
+ 
+ 	/* Expect to never return. */
+diff --git a/src/arch/486/bootblock.ld b/src/arch/486/bootblock.ld
+index 1126c84..b2df67a 100644
+--- a/src/arch/486/bootblock.ld
++++ b/src/arch/486/bootblock.ld
+@@ -1,5 +1,20 @@
+ /* SPDX-License-Identifier: GPL-2.0-only */
+ 
++/*
++ * Layout of the bootblock at the top of the 4 GiB address space, which the
++ * chipset maps to the top of the flash. Included at the end of
++ * memlayout.ld (C-preprocessed, CONFIG() and #if work here). From the top:
++ *   0xFFFFFFFC  .header_pointer  CBFS master header pointer (4 bytes)
++ *   0xFFFFFFF0  .reset           reset vector jump (reset16.S), zero padded
++ *   below       .id              board identification strings (id.S)
++ *   below       .init            assembly: entry16.S first (.init._start),
++ *                                then the ROM GDT, cache_as_ram.S, entry32.S
++ *   below       .text etc.       bootblock C code (program.ld)
++ * The 16-bit code in entry16.S cannot compute 32-bit addresses, so the
++ * linker provides the low 16 bits of the descriptor-table images as
++ * gdtptr_offset and nullidt_offset (see entry16.S).
++ */
++
+ gdtptr_offset = gdtptr & 0xffff;
+ nullidt_offset = nullidt & 0xffff;
+ 
+@@ -31,6 +46,9 @@ SECTIONS {
+ 	 */
+ 	PROGRAM_SZ = SIZEOF(.text) + 512;
+ 
++	/* The sizes used here (PROGRAM_SZ, EARLYASM_SZ, _ID_SECTION) are
++	 * defined further down from SIZEOF(); ld resolves the forward
++	 * references. ECFW and FIT pointers are empty on this board. */
+ 	. = MIN(_ECFW_PTR, MIN(_ID_SECTION, _FIT_POINTER)) - EARLYASM_SZ;
+ 	. = CONFIG(SIPI_VECTOR_IN_ROM) ? ALIGN(4096) : ALIGN(16);
+ 	BOOTBLOCK_TOP = .;
+@@ -86,6 +104,7 @@ SECTIONS {
+ 	. = 0xfffffff0;
+ #endif
+ 	_X86_RESET_VECTOR = .;
++	/* The 5-byte jump of reset16.S, then zeros up to the header pointer. */
+ 	.reset . : {
+ 		*(.reset);
+ 		. = _X86_RESET_VECTOR_FILLING;
+diff --git a/src/arch/486/c_start.S b/src/arch/486/c_start.S
+index 3409a5d..5ebe85e 100644
+--- a/src/arch/486/c_start.S
++++ b/src/arch/486/c_start.S
+@@ -3,6 +3,15 @@
+ #include <cpu/486/post_code.h>
+ #include <arch/ram_segs.h>
+ 
++/*
++ * Ramstage entry point and the ramstage GDT.
++ * Postcar loads ramstage from CBFS into RAM (cbmem), relocates it (it is an
++ * rmodule) and calls _start(cbmem_top) as a C function: 32-bit flat
++ * protected mode, caches on, interrupts off, still on the postcar stack.
++ * _start switches to its own GDT and stack and calls main()
++ * (lib/hardwaremain.c), which never returns.
++ */
++
+ /* Place the stack in the bss section. It's not necessary to define it in
+  * the linker script. */
+ 	.section .bss, "aw", @nobits
+@@ -10,6 +19,7 @@
+ .global _estack
+ .global _stack_size
+ 
++/* CONFIG_STACK_SIZE (8 KiB) of ramstage stack, in RAM. */
+ .align 16
+ _stack:
+ .space CONFIG_STACK_SIZE
+@@ -25,6 +35,10 @@ _estack:
+ 	.globl _start
+ _start:
+ 	cli
++	/* GDTR := the GDT below (in .data, so in RAM). The far jump reloads
++	 * CS with RAM_CODE_SEG = 0x10, the flat code segment of this table:
++	 * the selector numbers differ from the ROM GDT (code 0x08, data 0x10).
++	 * Then DS/ES/SS := RAM_DATA_SEG = 0x18, FS/GS := null selector. */
+ #if ENV_X86_64
+ 	movabs	$gdtaddr, %rax
+ 	lgdt	(%rax)
+@@ -54,6 +68,7 @@ _start:
+ 	movabs	$_stack, %rdi
+ #else
+ 	/* The return argument is at 0(%esp), the calling argument at 4(%esp) */
++	/* (_cbmem_top_ptr: read back by cbmem_top() in lib/imd_cbmem.c) */
+ 	movl	4(%esp), %eax
+ 	movl	%eax, _cbmem_top_ptr
+ 	leal	_stack, %edi
+@@ -64,6 +79,7 @@ _start:
+ 	 * recently uncovered a bug in the broadcast SIPI
+ 	 * code.
+ 	 */
++	/* rep stosl: store EAX to ECX dwords at ES:EDI (EDI = _stack). */
+ 	movl	$_estack, %ecx
+ 	subl	%edi, %ecx
+ 	shrl	$2, %ecx   /* it is 32 bit aligned, right? */
+@@ -92,6 +108,9 @@ _start:
+ 	call gdb_hw_init
+ 	call gdb_stub_breakpoint
+ #endif
++	/* lib/hardwaremain.c: loads the IDT (exception_init), enumerates
++	 * and configures the devices, writes the tables, loads and starts
++	 * the payload (SeaBIOS). */
+ 	call	main
+ 	/* NOTREACHED */
+ .Lhlt:
+@@ -146,6 +165,9 @@ gdtaddr:
+ 	 * stuff, like initializing PCI option ROMs in real mode, or doing
+ 	 * a resume from a suspend to RAM.
+ 	 */
++	/* Descriptor format: see gdt_init.S. In this build only 0x10, 0x18
++	 * and the per-CPU entry are used: option ROMs run under SeaBIOS, not
++	 * coreboot, and ACPI S3 resume is not built. */
+ gdt:
+ 	/* selgdt 0, unused */
+ 	.word	0x0000, 0x0000		/* dummy */
+@@ -175,6 +197,7 @@ gdt:
+ 
+ 	/* The next two entries are used for executing VGA option ROMs */
+ 
++	/* (flags 0: byte granularity, 16-bit; limit 0xffff) */
+ 	/* selgdt 0x28 16 bit 64k code at 0x00000000 */
+ 	.word	0xffff, 0x0000
+ 	.byte	0, 0x9a, 0, 0
+@@ -184,6 +207,9 @@ gdt:
+ 	.byte	0, 0x92, 0, 0
+ 
+ 	/* The next two entries are used for ACPI S3 RESUME */
++	/* (Unused here. arch/ram_segs.h names 0x38 code and 0x40 data, the
++	 * reverse of the comments below, and the limit[15:0] of 0x38 is 0,
++	 * so its limit is 0xF0000FFF rather than 4 GiB; both as upstream.) */
+ 
+ 	/* selgdt 0x38, flat data segment 16 bit */
+ 	.word	0x0000, 0x0000		/* dummy */
+@@ -202,6 +228,9 @@ gdt:
+ 	.word	0xffff, 0x0000
+ 	.byte	0x00, 0x9b, 0xaf, 0x00
+ #endif
++	/* One data descriptor per CPU (CONFIG_MAX_CPUS = 1 here).
++	 * set_cpu_info() in arch/486/cpu.c patches its base to the CPU data
++	 * and loads it into GS; cpu_info() then reads the pointer at gs:0. */
+ per_cpu_segment_descriptors:
+ 	.rept CONFIG_MAX_CPUS
+ 	/* flat data segment */
+diff --git a/src/arch/486/car.ld b/src/arch/486/car.ld
+index 2c686a7..194fa55 100644
+--- a/src/arch/486/car.ld
++++ b/src/arch/486/car.ld
+@@ -4,6 +4,16 @@
+ #include <memlayout.h>
+ 
+ /* This file is included inside a SECTIONS block */
++
++/*
++ * Cache-as-RAM layout (see cpu/486/cache_as_ram.S), shared by bootblock and
++ * romstage so that the console and timestamps keep their addresses. NOLOAD:
++ * nothing is stored in the ROM, the region only exists in L1 at run time.
++ * In this build (bootblock.map): car_stack 0x1A0000-0x1A1000, pre-RAM cbmem
++ * console 0x1A1000-0x1A1C00, timestamps 0x1A1C00-0x1A1E00, EHCI debug info,
++ * then the per-stage .bss, end of CAR 0x1A2000. The stack grows down from
++ * _ecar_stack towards _car_region_start.
++ */
+ . = CONFIG_DCACHE_RAM_BASE;
+ .car.data . (NOLOAD) : {
+ 	_car_region_start = . ;
+@@ -87,6 +97,8 @@
+  * This section is checked during stage creation to ensure
+  * that there are no global variables present
+  */
++/* (Initialized .data cannot work in a stage that runs from flash: the
++ * build fails if anything lands in .illegal_globals.) */
+ 
+ #if CONFIG(NORTHBRIDGE_ALI_M1489)
+ . = 0x000fff00;
+diff --git a/src/arch/486/exit_car.S b/src/arch/486/exit_car.S
+index 7874c13..ef99afd 100644
+--- a/src/arch/486/exit_car.S
++++ b/src/arch/486/exit_car.S
+@@ -2,9 +2,25 @@
+ 
+ //TODO remove 686 and x86-64 code
+ 
++/*
++ * Postcar entry point: leaves cache-as-RAM (cache_as_ram.S) and calls
++ * main() in arch/486/postcar.c, which loads and runs ramstage.
++ *
++ * Romstage has initialized the DRAM, copied postcar into it (cbmem),
++ * relocated it (postcar is an rmodule) and calls _start(cbmem_top) as a C
++ * function (prog_run in arch/486/postcar_loader.c). On entry: 32-bit flat
++ * protected mode, CR0.CD = NW = 1 (CAR still frozen in L1), ESP still on
++ * the romstage stack in CAR, code executing from DRAM (uncached).
++ *
++ * This version tears CAR down inline (the call to chipset_teardown_car is
++ * commented out). It also contains debug output that is always built:
++ * raw binary bytes on COM1 (marked "pc2005" by the author).
++ */
++
+ 
+ #include <cpu/486/cr.h>
+ #include <cpu/486/cache.h>
++#include <cpu/486/post_code.h>
+ 
+ 
+ #define UMC_PCI_BDFR(BUS, DEV, FN, REG) ( \
+@@ -16,6 +32,9 @@
+ )
+ 
+ 
++/* send_uart: write AL to COM1 and wait until sent, in the debug ROM only (the flash ROM keeps
++ * COM1 silent). pci_write/pci_read: PCI configuration byte access, see cpu/486/cache_as_ram.S. */
++#if CONFIG(CONSOLE_SERIAL)
+ #define send_uart		\
+ 	movw	$0x3f8, %dx;	\
+ 	outb	%al, %dx;	\
+@@ -23,6 +42,9 @@
+ 	inb	%dx, %al;	\
+ 	testb	$0x20, %al;	\
+ 	jz	1b
++#else
++#define send_uart
++#endif
+ 
+ 
+ #define pci_write(BDFR, REG_IMM)	\
+@@ -55,6 +77,7 @@
+ .global _estack
+ .global _stack_size
+ 
++/* Postcar stack (CONFIG_STACK_SIZE, 8 KiB), in DRAM. */
+ _stack:
+ .space CONFIG_STACK_SIZE
+ _estack:
+@@ -66,13 +89,17 @@ _start:
+ 	/* Assume stack alignment doesn't matter here as chipset_teardown_car
+ 	   is expected to be implemented in assembly. */
+ 
++	post_code(POST_486_POSTCAR)
++
+ 	/* Migrate GDT to this text segment */
++	/* (GDTR := postcar's own copy of the ROM GDT, gdt_init.S) */
+ #if ENV_X86_64
+ 	call	gdt_init64
+ #else
+ 	call	gdt_init
+ #endif
+ 
++	/* Debug, always built: "{" CR three times on COM1. */
+ 	mov	$'{', %al
+ 	send_uart
+ 	mov	$0xd, %al
+@@ -91,11 +118,17 @@ _start:
+ 	movabs %rax, _cbmem_top_ptr
+ #else
+ 	/* The return argument is at 0(%esp), the calling argument at 4(%esp) */
++	/* (save cbmem_top before the CAR stack is dropped; the write misses
++	 * the cache and goes straight to DRAM) */
+ 	movl	4(%esp), %eax
+ 	movl	%eax, _cbmem_top_ptr
+ #endif
+ 
+ 
++	/* Debug, always built (#if 1): sends raw little-endian dwords to
++	 * COM1: the current EIP (call/pop trick), ESP, the return address at
++	 * (%esp), _cbmem_top_ptr, then CR0 and CR0 & ~(CD|NW), each followed
++	 * by a CR (0x0d). send_uart clobbers EAX and DX only. */
+ #if 1
+ 	call	1f
+ 1:
+@@ -164,6 +197,8 @@ _start:
+ 
+ #endif
+ 
++/* Disabled: clflush does not exist on a 486 (and is not needed: with
++ * CD = NW = 1 the write above already went to DRAM). */
+ #if 0	//no cflush on 486 // TODO macro?
+ 	/* Make sure _cbmem_top_ptr hits dram before invd */
+ 	movl	$1, %eax
+@@ -226,6 +261,7 @@ skip_clflush:
+ 
+ 	# invd
+ 
++	/* Debug, always built: "34567" on COM1. */
+ 	mov	$0x33, %al	//pc2005
+ 	send_uart
+ 	mov	$0x34, %al	//pc2005
+@@ -239,6 +275,11 @@ skip_clflush:
+ 
+ 
+ 	//fill L2 cache, twice as size?
++	/* Zero 1 MiB of DRAM at 0x200000-0x2FFFFF (rep stosl: EAX to ECX
++	 * dwords at ES:EDI). Still in CAR mode, so the writes miss L1 and go
++	 * to DRAM (and through the board L2 cache, the apparent purpose).
++	 * Nothing is loaded there yet: postcar and its stack are in cbmem
++	 * near the top of RAM, ramstage and the payload come later. */
+ 	movl	$0x200000, %edi
+ 	movl	$0x300000, %ecx
+ 	sub	%edi, %ecx
+@@ -250,9 +291,14 @@ skip_clflush:
+ 	xor	%eax, %eax
+ 	rep	stosl	/* DF=0, up */
+ 
++	/* Leave CAR: drop every L1 line without write-back. The old CAR
++	 * content (romstage stack, pre-RAM console) is gone; nothing below
++	 * uses the stack until ESP is reloaded. */
+ 	invd
+ 
+ 	/* Enable caching if not already enabled. */
++	/* (CD = NW = 0: normal L1 operation from here on; the invd after it
++	 * makes sure L1 starts empty) */
+ #if ENV_X86_64
+ 	mov	%cr0, %rax
+ 	and     $(~(CR0_CD | CR0_NW)), %eax
+@@ -270,9 +316,12 @@ skip_clflush:
+ 	invd
+ 	# invd
+ 
+-	movl	$0x200000, %edi
++	/* Read 2 MiB (ECX = 0x80000 dwords) with rep lodsl from DS:ESI, to
++	 * fill the caches from 0x200000-0x3FFFFF. */
++	post_code(POST_486_CAR_OFF)
++	movl	$0x200000, %esi
+ 	movl	$0x400000, %ecx
+-	sub	%edi, %ecx
++	sub	%esi, %ecx
+ 	shr	$2, %ecx
+ 	cld
+ 
+@@ -292,6 +341,9 @@ skip_clflush:
+ #endif
+ 
+ 	//TODO switch to writeback? (any time probably)
++	/* Read-modify-write of UM8881 register 50h (HB50_L2_CFG_0): set bit
++	 * 6, the L2 cache WT/WB mode bit (per ../um8881f-documentation-*.pdf,
++	 * community notes, not an official datasheet). */
+ #if 1
+ 	pci_read(UMC_PCI_BDFR(0, 0x10, 0, 0x50))
+ 	movb	%al, %cl
+@@ -299,6 +351,7 @@ skip_clflush:
+ 	pci_write(UMC_PCI_BDFR(0, 0x10, 0, 0x50), %cl)
+ #endif
+ 
++	/* Debug, always built: 'X' 0x0c 0x0b 0x0a on COM1. */
+ 	mov	$'X', %al	//pc2005
+ 	send_uart
+ 	mov	$0xc, %al	//pc2005
+@@ -367,6 +420,7 @@ test:
+ 
+ 	//NOTICE all levels of memory should be coherent by now
+ 
++	/* Switch to postcar's own stack in DRAM. */
+ 	movl	$_estack, %esp
+ 	/* Align stack to 16 bytes at call instruction. */
+ 	andl	$0xfffffff0, %esp
+@@ -431,6 +485,7 @@ test:
+ #endif
+ 
+ 	/* Call into main for postcar. */
++	/* (arch/486/postcar.c: console, cbmem, then run_ramstage()) */
+ 	call	main
+ 	/* Should never return. */
+ 1:
+diff --git a/src/arch/486/gdt_init.S b/src/arch/486/gdt_init.S
+index 456084f..9f73a30 100644
+--- a/src/arch/486/gdt_init.S
++++ b/src/arch/486/gdt_init.S
+@@ -1,11 +1,24 @@
+ /* SPDX-License-Identifier: GPL-2.0-only */
+ 
++/*
++ * The "ROM" GDT used from the reset vector until ramstage (c_start.S then
++ * loads a larger GDT in RAM). It is linked into three stages:
++ *  - bootblock: entry16.S loads gdtptr directly with lgdtl (gdt_init()
++ *    itself is unreferenced and dropped by the linker);
++ *  - romstage (assembly_entry.S) and postcar (arch/486/exit_car.S) call
++ *    gdt_init() so that GDTR points to their own copy of the table.
++ * Selectors: 0x08 flat 32-bit code, 0x10 flat 32-bit data
++ * (arch/rom_segs.h). program.ld and bootblock.ld put .init first.
++ */
++
+ .code32
+ 
+ .section .init, "ax", @progbits
+ 
+ .section .init._gdt_, "ax", @progbits
+ 
++	/* void gdt_init(void): GDTR := gdtptr (6 bytes: 16-bit limit,
++	 * 32-bit linear base). */
+ 	.globl gdt_init
+ gdt_init:
+ /*
+@@ -48,9 +61,18 @@ gdtptr64:
+ 	.quad	gdt		 /* we know the offset */
+ #endif
+ 
++	/* Each descriptor is 8 bytes: limit[15:0], base[15:0], base[23:16],
++	 * access byte, flags (G, D/B, L, AVL) in the high nibble with
++	 * limit[19:16] in the low nibble, base[31:24].
++	 * Access 0x9b = present, ring 0, code, execute/read, accessed;
++	 * 0x93 = present, ring 0, data, read/write, accessed.
++	 * Flags 0xc = G (limit in 4 KiB units) + D (32-bit): base 0 with limit
++	 * 0xfffff * 4 KiB covers the whole 4 GiB, so offset = physical
++	 * address ("flat"). */
+ 	.align	4
+ gdt:
+ 	/* selgdt 0, unused */
++	/* (selector 0 is the null selector; the CPU never reads entry 0) */
+ 	.word	0x0000, 0x0000		/* dummy */
+ 	.byte	0x00, 0x00, 0x00, 0x00
+ 
+@@ -66,6 +88,7 @@ gdt:
+ 	//TODO only 64bit??
+ 
+ 	/* selgdt 0x18, flat code segment (64-bit) */
++	/* (flags 0xa = G + L: x86-64 only, never loaded on a 486) */
+ 	.word   0xffff, 0x0000
+ 	.byte   0x00, 0x9b, 0xaf, 0x00
+ 
+diff --git a/src/arch/486/id.S b/src/arch/486/id.S
+index 64f7a79..e5179e9 100644
+--- a/src/arch/486/id.S
++++ b/src/arch/486/id.S
+@@ -1,5 +1,15 @@
+ /* SPDX-License-Identifier: GPL-2.0-only */
+ 
++/*
++ * ROM identification block (data only, bootblock). bootblock.ld places the
++ * .id section so that it ends at 0xFFFFFFF0, right below the reset vector.
++ * Tools such as flashrom read it from the top of the image to identify the
++ * board: three NUL-terminated strings, then for each string its address as
++ * a negative offset from 4 GiB (0x100000000 - address, i.e. its distance
++ * from the end of the address space), then the ROM size.
++ * COREBOOT_VERSION comes from the generated build.h.
++ */
++
+ #include <build.h>
+ 
+ .section ".id", "a", @progbits
+diff --git a/src/arch/486/idt.S b/src/arch/486/idt.S
+index 99d6e95..111dba8 100644
+--- a/src/arch/486/idt.S
++++ b/src/arch/486/idt.S
+@@ -1,5 +1,20 @@
+ /* SPDX-License-Identifier: GPL-2.0-only */
+ 
++/*
++ * CPU exception entry stubs for ramstage (CONFIG_IDT_IN_EVERY_STAGE is off,
++ * so earlier stages run with the empty IDT from entry16.S).
++ * exception_init() in exception.c builds a 20-entry IDT of interrupt gates
++ * pointing to vec0..vec19 and loads it with lidt. On an exception the CPU
++ * pushes EFLAGS, CS, EIP (no stack switch: everything runs in ring 0) and,
++ * for vectors 8, 10-14 and 17 only, an error code. Each stub pushes a dummy
++ * error code where the CPU does not, then the vector number, so that the
++ * frame always has the same layout, and jumps to int_hand.
++ * int_hand saves the registers as a struct eregs and calls the C function
++ * x86_exception(struct eregs *): it dumps the registers and halts, except
++ * for debug-register breakpoints (vector 1, see breakpoint.c and
++ * null_breakpoint.c), which return here and resume with iret.
++ */
++
+ 	.section ".text._idt", "ax", @progbits
+ #if ENV_X86_64
+ 	.code64
+@@ -179,11 +194,16 @@ int_hand:
+ 	 * 12(%esp) cs
+ 	 * 16(%esp) eflags
+ 	 */
++	/* Build struct eregs (arch/486/include/arch/registers.h) downwards:
++	 * after these 8 pushes the stack holds, from ESP upwards, eax ecx edx
++	 * ebx esp ebp esi edi vector error_code eip cs eflags. */
+ 	pushl	%edi
+ 	pushl	%esi
+ 	pushl	%ebp
+ 
+ 	/* Original stack pointer */
++	/* (32 = 3 pushes above + vector, error code, eip, cs, eflags: the
++	 * ESP value before the exception) */
+ 	leal	32(%esp), %ebp
+ 	pushl	%ebp
+ 	pushl	%ebx
+@@ -200,6 +220,8 @@ int_hand:
+ 	sub	$12, %esp
+ 	pushl	%ebp	/* Pointer to structure on the stack */
+ 	call	x86_exception
++	/* The argument slot still holds the eregs pointer: popping it into
++	 * ESP undoes both the argument push and the alignment. */
+ 	pop	%esp	/* Unwind the stack alignment and argument passing. */
+ 
+ 	popl	%eax
+@@ -212,5 +234,7 @@ int_hand:
+ 	popl	%edi
+ 
+ 	addl	$8, %esp /* pop of the vector and error code */
++	/* iret pops EIP, CS, EFLAGS: resume the interrupted code (with the
++	 * register values x86_exception may have changed in eregs). */
+ 	iret
+ #endif
+diff --git a/src/arch/486/include/arch/pirq_routing.h b/src/arch/486/include/arch/pirq_routing.h
+index fed6d1e..57bfe3a 100644
+--- a/src/arch/486/include/arch/pirq_routing.h
++++ b/src/arch/486/include/arch/pirq_routing.h
+@@ -45,5 +45,6 @@ unsigned long copy_pirq_routing_table(unsigned long addr,
+ unsigned long write_pirq_routing_table(unsigned long start);
+ 
+ void pirq_assign_irqs(const unsigned char pirq[CONFIG_MAX_PIRQ_LINKS]);
++void mainboard_pirq_preset(unsigned char *pirq);
+ 
+ #endif /* ARCH_PIRQ_ROUTING_H */
+diff --git a/src/arch/486/memlayout.ld b/src/arch/486/memlayout.ld
+index 9c1eeb0..8849022 100644
+--- a/src/arch/486/memlayout.ld
++++ b/src/arch/486/memlayout.ld
+@@ -1,5 +1,14 @@
+ /* SPDX-License-Identifier: GPL-2.0-only */
+ 
++/*
++ * Top-level linker script of every 486 stage (CONFIG_MEMLAYOUT_LD_FILE).
++ * The build runs it through the C preprocessor once per stage (ENV_* come
++ * from rules.h and -D__BOOTBLOCK__ etc.); the REGION/RAMSTAGE/... macros
++ * are in include/memlayout.h, and each macro pulls in lib/program.ld for
++ * the stage sections. header.ld sets ENTRY(_start).
++ * Postcar and ramstage are rmodules: relocated at load time, so their link
++ * address (8M) is not where they run.
++ */
+ #include <memlayout.h>
+ #include <arch/header.ld>
+ 
+diff --git a/src/arch/486/pirq_routing.c b/src/arch/486/pirq_routing.c
+index 9b2da4e..a5acb27 100644
+--- a/src/arch/486/pirq_routing.c
++++ b/src/arch/486/pirq_routing.c
+@@ -115,6 +115,11 @@ static u8 pirq_get_next_free_irq(u8 *pirq, u16 bitmap)
+ 	return irq;
+ }
+ 
++/* Links with an IRQ already chosen (e.g. in a setup utility); 0 = route automatically. */
++void __weak mainboard_pirq_preset(unsigned char *pirq)
++{
++}
++
+ static void pirq_route_irqs(unsigned long addr)
+ {
+ 	int i, intx, num_entries;
+@@ -123,6 +128,7 @@ static void pirq_route_irqs(unsigned long addr)
+ 	struct irq_routing_table *pirq_tbl;
+ 
+ 	memset(pirq, 0, CONFIG_MAX_PIRQ_LINKS);
++	mainboard_pirq_preset(pirq);
+ 
+ 	pirq_tbl = (struct irq_routing_table *)(addr);
+ 	num_entries = (pirq_tbl->size - 32) / 16;
+diff --git a/src/console/Makefile.inc b/src/console/Makefile.inc
+index 4296426..b2093e8 100644
+--- a/src/console/Makefile.inc
++++ b/src/console/Makefile.inc
+@@ -1,5 +1,5 @@
+-ramstage-y += vtxprintf.c printk.c vsprintf.c
+-ramstage-y += init.c console.c
++ramstage-y += vtxprintf.c vsprintf.c
++ramstage-$(CONFIG_CONSOLE_SERIAL) += printk.c init.c console.c
+ ramstage-y += post.c
+ ramstage-y += die.c
+ ifeq ($(CONFIG_HWBASE_DEBUG_CB),y)
+@@ -22,8 +22,8 @@ verstage-y += die.c
+ verstage-y += init.c
+ verstage-y += vtxprintf.c vsprintf.c
+ 
+-romstage-y += vtxprintf.c printk.c vsprintf.c
+-romstage-y += init.c console.c
++romstage-y += vtxprintf.c vsprintf.c
++romstage-$(CONFIG_CONSOLE_SERIAL) += printk.c init.c console.c
+ romstage-y += post.c
+ romstage-y += die.c
+ 
+diff --git a/src/cpu/486/bootblock.c b/src/cpu/486/bootblock.c
+index f6f29a6..a03f882 100644
+--- a/src/cpu/486/bootblock.c
++++ b/src/cpu/486/bootblock.c
+@@ -8,6 +8,7 @@
+ #include <bootblock_common.h>
+ #include <console/console.h>
+ #include <cpu/486/bist.h>
++#include <cpu/486/newbios_post.h>
+ 
+ void __weak bootblock_early_northbridge_init(void) { }
+ void __weak bootblock_early_southbridge_init(void) { }
+@@ -22,13 +23,13 @@ void bootblock_early_cpu_init(void)
+ 
+ void bootblock_soc_early_init(void)
+ {
+-	post_code('E');
++	post_code(POST_486_EARLY_NORTHBRIDGE);
+ 	bootblock_early_northbridge_init();
+-	post_code('F');
++	post_code(POST_486_EARLY_SOUTHBRIDGE);
+ 	bootblock_early_southbridge_init();
+-	post_code('G');
++	post_code(POST_486_EARLY_CPU);
+ 	bootblock_early_cpu_init();
+-	post_code('H');
++	post_code(POST_486_LOAD_ROMSTAGE);
+ }
+ 
+ 
+@@ -43,7 +44,7 @@ asmlinkage void bootblock_c_entry_bist(uint64_t base_timestamp, uint32_t bist)
+ 	);
+ #endif
+ 
+-	post_code('C');
++	post_code(POST_486_BOOTBLOCK_C);
+ 
+ 	/* Halt if there was a built in self test failure */
+ 	if (bist) {
+@@ -52,7 +53,7 @@ asmlinkage void bootblock_c_entry_bist(uint64_t base_timestamp, uint32_t bist)
+ 		report_bist_failure(bist);
+ 	}
+ 
+-	post_code('I');
++	post_code(POST_486_BIST_OK);
+ 
+ 	// asm volatile(
+ 	// 	"mov %0, %%al\n\t"     // Move the character to AL register
+diff --git a/src/cpu/486/cache_as_ram.S b/src/cpu/486/cache_as_ram.S
+index 66a1ab6..c4ca32f 100644
+--- a/src/cpu/486/cache_as_ram.S
++++ b/src/cpu/486/cache_as_ram.S
+@@ -1,8 +1,32 @@
+ /* SPDX-License-Identifier: GPL-2.0-only */
+ 
++/*
++ * Cache-as-RAM (CAR) for the 486, then the call into the bootblock C code.
++ *
++ * Until romstage has initialized the DRAM there is no RAM, but C code needs
++ * a stack and some writable data. The 486 L1 cache provides it:
++ *   1. make the CAR range (CONFIG_DCACHE_RAM_BASE, 8 KiB at 0x1A0000 in this
++ *      build) look like cacheable DRAM to the chipset (fake DRAM banks), so
++ *      the CPU may allocate cache lines for it (the chipset asserts KEN#);
++ *   2. enable the cache (CR0.CD = NW = 0) and read the whole range once:
++ *      every 16-byte line is filled into L1;
++ *   3. set CR0.CD = 1 and NW = 1. In that mode the 486 makes no new line
++ *      fills and no write-through: reads and writes that hit a cached line
++ *      stay inside the cache, everything else goes to the bus uncached.
++ *      The filled range is now 8 KiB of RAM inside the CPU, while code keeps
++ *      being fetched uncached from flash;
++ *   4. remove the fake banks, zero the range, point ESP into it and call
++ *      bootblock_c_entry_bist() (src/cpu/486/bootblock.c), never to return.
++ * The layout of the range (stack, pre-RAM console, timestamps, .bss) comes
++ * from car.ld. Postcar (arch/486/exit_car.S) leaves this mode again.
++ * Entered from entry32.S: 32-bit flat protected mode, EBP = BIST result.
++ */
++
+ #include <cpu/486/post_code.h>
+ #include <cpu/486/cache.h>
+ 
++/* PCI configuration address for mechanism #1 (port 0xCF8): enable bit 31,
++ * bus, device, function and register number. */
+ #define UMC_PCI_BDFR(BUS, DEV, FN, REG) ( \
+ 	(1 << 31) | \
+ 	(((BUS) & 0xff) << 16) | \
+@@ -11,6 +35,10 @@
+ 	(((REG)  & 0xff) << 0) \
+ )
+ 
++/* Write one byte to PCI configuration space without a stack: address to
++ * 0xCF8, then the byte to 0xCFC + (register & 3). Clobbers EAX, DX.
++ * pci_read() is the same read; send_uart() writes AL to the UART and waits
++ * until it is sent. */
+ #define pci_write(BDFR, REG_IMM)	\
+ 	movw	$0xcf8, %dx;	\
+ 	movl	$ BDFR, %eax;	\
+@@ -49,6 +77,7 @@ https://elixir.bootlin.com/coreboot/4.20.1/source/src/commonlib/include/commonli
+ */
+ #include <cpu/intel/post_codes.h>
+ 
++/* CBFS_FILE_*: unused leftovers (offsets of a CBFS file header). */
+ #define CBFS_FILE_MAGIC 0
+ #define CBFS_FILE_LEN (CBFS_FILE_MAGIC + 8)
+ #define CBFS_FILE_TYPE (CBFS_FILE_LEN + 4)
+@@ -62,9 +91,12 @@ https://elixir.bootlin.com/coreboot/4.20.1/source/src/commonlib/include/commonli
+ bootblock_pre_c_entry:
+ 
+ cache_as_ram:
+-	post_code(/*POST_BOOTBLOCK_CAR*/ '4')
++	post_code(POST_BOOTBLOCK_CAR)
+ 
+ 
++/* Disabled (#if 0): POKER, a tiny serial monitor for bring-up. A host sends
++ * 6-byte commands on COM1 to read/write memory, I/O ports and PCI registers
++ * and to switch the L1 cache before any C code runs. Not built. */
+ #if 0
+ # POKER POKER POKER POKER POKER POKER POKER POKER POKER
+ # POKER POKER POKER POKER POKER POKER POKER POKER POKER
+@@ -340,6 +372,11 @@ exit_poker:
+ 
+ # set up L1 cacheable range (usually it means to define fake RAM area)
+ 
++/* The 486 allocates a cache line only when the chipset asserts KEN# for
++ * the access, and a chipset does that only for its (cacheable) DRAM. The
++ * blocks below make the CAR range part of the DRAM map. The DRAM content
++ * itself does not matter: only the line fills are needed. ALi M1489 is
++ * another board; this build uses the UMC UM8881 branch. */
+ #if CONFIG(NORTHBRIDGE_ALI_M1489)
+ 	/* ALI specific, NB will not generate /KEN in noncacheable regions, probably everything outside RAM */
+ 
+@@ -409,9 +446,13 @@ pci_dump_loop:
+ 
+ 	/* define fake RAM 4x 32MB */
+ 	/* CONFIG_DCACHE_RAM_BASE must be in range to L1 able to work as CAR */
++	/* Host bridge (device 0x10) register 52h: bits 6-4 = upper region
++	 * capacity, bits 2-0 = lower region capacity; 7 is the largest code
++	 * (see ../um8881f-documentation-*.pdf). */
+ 	pci_write(UMC_PCI_BDFR(0, 0x10, 0, 0x52), $0x77)
+ 
+ 	/* 2 double sided banks in both */
++	/* Register 53h bits 3-0: upper/lower region double sided, 2 banks. */
+ 	pci_write(UMC_PCI_BDFR(0, 0x10, 0, 0x53), $0x0f)
+ 
+ 	/* TODO EXPERIMENTAL set L1 bit ??? */
+@@ -429,6 +470,7 @@ pci_dump_loop:
+ 	*/
+ 
+ 	/* Enable cache (CR0.CD = 0, CR0.NW = 0) */
++	/* The invd right before empties L1, so no stale line is enabled. */
+ 	movl	%cr0, %eax
+ 	andl	$(~(CR0_CacheDisable | CR0_NoWriteThrough)), %eax
+ 	invd
+@@ -440,7 +482,7 @@ pci_dump_loop:
+ 		read will fill L1
+ 	*/
+ 
+-	post_code(/*POST_SOC_FILL_CACHE*/ '6')
++	post_code(POST_486_CAR_FILL)
+ 
+ 	/*
+ 	address is defined in CONFIG_DCACHE_RAM_BASE
+@@ -449,6 +491,12 @@ pci_dump_loop:
+ 	*/
+ 
+ 	/* Fill cache lines */
++	/* rep lodsl = load ECX dwords from DS:ESI into EAX, ESI += 4 each
++	 * (DF = 0 after cld). The values are discarded: each read that misses
++	 * makes the CPU fill one 16-byte line. Afterwards the whole CAR range
++	 * (_car_region_start.._car_region_end from car.ld) is in L1. With an
++	 * 8 KiB L1 (486DX/DX2) that is the whole cache, with 16 KiB (DX4,
++	 * Am5x86) half of it. */
+ 	movl	$_car_region_start, %esi
+ 	movl	$_car_region_end, %ecx
+ 	sub	%esi, %ecx
+@@ -456,16 +504,19 @@ pci_dump_loop:
+ 	cld
+ 	rep	lodsl	/* cld? DF=0 */
+ 
+-	post_code(POST_SOC_DISABLE_CACHE)	/* '-' */
++	post_code(POST_486_CAR_LOCKED)
+ 
+ 	/* Enable Cache-as-RAM mode by disabling cache. */
++	/* CD = 1 and NW = 1: no more line fills, no write-through, hits are
++	 * still served by L1. The filled lines can no longer be evicted, so
++	 * they behave as 8 KiB of RAM. */
+ 	movl	%cr0, %eax
+ 	orl	$(CR0_CacheDisable | CR0_NoWriteThrough), %eax
+ 	movl	%eax, %cr0
+ 
+ 	/* NOW in cache as RAM */
+ 
+-	post_code('A')
++	post_code(POST_486_CAR_DRAM_OFF)
+ 
+ #if CONFIG(NORTHBRIDGE_ALI_M1489)
+ 	/* disable L1 /ken generation in chipset */
+@@ -476,12 +527,17 @@ pci_dump_loop:
+ 
+ #elif CONFIG(NORTHBRIDGE_UMC_UM8881)
+ 	/* disable RAM (L1 CAR is now filled) */
++	/* Back to "no DRAM banks"; romstage sizes the real DRAM later. From
++	 * here an access outside the CAR range reads or writes nothing, so
++	 * stack and data must stay inside it. */
+ 	pci_write(UMC_PCI_BDFR(0, 0x10, 0, 0x52), $0x00)
+ 	pci_write(UMC_PCI_BDFR(0, 0x10, 0, 0x53), $0x00)
+ #endif
+ 
+ 
+ 
++/* Disabled (#if 0): chipset register values copied from a Linux dump,
++ * kept for reference. Not built. */
+ #if 0
+ /*
+ FORCE table
+@@ -541,7 +597,7 @@ pci_write(UMC_PCI_BDFR(0, 0x12, 0, 0xa8), $0x28)
+ #endif
+ 
+ 
+-post_code('D')
++post_code(POST_486_CAR_CLEAR)
+ 
+ 
+ #if 0	/* ========================= PCI DUMP ================ */
+@@ -572,6 +628,8 @@ pci_dump_loop2:
+ 	*/
+ 
+ 	/* Clear the cache memory region. There should not be any traffic to RAM */
++	/* rep stosl = store EAX (0) to ECX dwords at ES:EDI, upwards. This
++	 * also zeroes the bootblock .bss, which car.ld puts inside CAR. */
+ 	movl	$_car_region_start, %edi
+ 	movl	$_car_region_end, %ecx
+ 	sub	%edi, %ecx
+@@ -583,12 +641,17 @@ pci_dump_loop2:
+ 	cld
+ 	rep	stosl	/* cld? DF=0 */
+ 
+-	post_code(/*POST_BOOTBLOCK_BEFORE_C_ENTRY*/ 'X')
++	post_code(POST_486_CAR_STACK)
+ 
+ 	//NOTICE _ecar_stack moved lower in linker script
++	/* _ecar_stack = top of the car_stack region (car.ld). The stack is
++	 * the bottom 4 KiB of CAR (0x1A0000-0x1A1000 in this build) and grows
++	 * down towards _car_region_start; nothing detects an overflow. */
+ 	movl	$_ecar_stack, %esp
+ 
+ 	/* Align the stack and keep aligned for call to bootblock_c_entry() */
++	/* 16-byte aligned, minus 4, minus the 3 pushes below (12) = 16-byte
++	 * aligned again at the call, as the i386 ABI of gcc expects. */
+ 	and	$0xfffffff0, %esp	/*lower 4 bits always 0*/
+ 	sub	$4, %esp		/*== push 4 bytes*/
+ 
+@@ -600,6 +663,9 @@ pci_dump_loop2:
+ 		can be compressed to eax (BIST != 0 failed -> halt)
+ 	*/
+ 
++	/* Arguments of bootblock_c_entry_bist(uint64_t base_timestamp,
++	 * uint32_t bist), pushed right to left: bist, then the 64-bit
++	 * timestamp as high dword and low dword. */
+ 	pushl	%ebp
+ 
+ 	/* Dummy timestamp - not implemented on 486 */
+@@ -608,7 +674,6 @@ pci_dump_loop2:
+ 
+ 
+ 	//10:08000ff0
+-	post_code('{')
+ 
+ #if 0
+ 	mov	%ss,%ax
+@@ -653,7 +718,6 @@ test:
+ #endif
+ 
+ 
+-	post_code('}')
+ 
+ #if 0
+ 	//quick search debug block
+@@ -673,12 +737,17 @@ test:
+ 	#endif
+ 
+ /* before_c_entry: */
++	/* C from here: src/cpu/486/bootblock.c -> bootblock_main_with_basetime()
++	 * -> early chipset init, CBFS lookup, jump to romstage. */
+ 	call	bootblock_c_entry_bist
+ 	/* Never returns */
++	/* Safety net: print 'H' and halt forever. */
+ .Lhlt:
+-	post_code(/*POST_DEAD_CODE*/ 'H')
++	post_code(POST_DEAD_CODE)
+ 	hlt
+ 	jmp	.Lhlt
+ 
++/* Unused leftover string (cpu/qemu-x86 uses it to load a "pagetables"
++ * CBFS file); it only costs 11 bytes of flash. */
+ pagetables_name:
+ 	.string "pagetables"
+diff --git a/src/cpu/486/entry16.S b/src/cpu/486/entry16.S
+index 071693b..c667a9a 100644
+--- a/src/cpu/486/entry16.S
++++ b/src/cpu/486/entry16.S
+@@ -27,10 +27,27 @@
+ /* Start code to put an i386 or later processor into 32-bit protected mode.
+  */
+ 
++/*
++ * Boot flow: reset16.S (reset vector) jumps here, in real mode, running in
++ * place from flash at 0xFFFFxxxx. This code:
++ *   1. saves the BIST result, sets up COM1 for the POST characters,
++ *   2. flushes the TLB and the L1 cache,
++ *   3. on a CPU-only reset with the chipset still configured, hands the
++ *      reset to SeaBIOS in shadow RAM (far jump to F000:FFF0),
++ *   4. otherwise loads an empty IDT and the ROM GDT (gdt_init.S), sets
++ *      CR0.PE and far-jumps to bootblock_protected_mode_entry (entry32.S),
++ *      which runs in 32-bit protected mode.
++ * Register use: EBP keeps the BIST result (EAX at reset) until entry32.S;
++ * DX/AL are scratch for port I/O.
++ */
++
+ #include <arch/rom_segs.h>
+ #include <cpu/486/post_code.h>
+ 
+ 
++/* Debug helper, only used in the disabled (#if 0) block below: send AL to
++ * COM1 (0x3F8) and wait until the transmit holding register is empty
++ * (bit 5 of the line status register 0x3FD). */
+ #define send_uart		\
+ 	movw	$0x3f8, %dx;	\
+ 	outb	%al, %dx;	\
+@@ -51,12 +68,19 @@
+ .type _start16bit, @function
+ 
+ _start16bit:
++	/* Real mode, 16-bit code. Interrupts stay off until the OS: nothing
++	 * could handle them yet. */
+ 	cli
+ 	/* Save the BIST result */
++	/* (EAX = built-in self-test result after reset, 0 = pass; EBP is not
++	 * used for anything else until entry32.S.) */
+ 	movl	%eax, %ebp
+ 
++	/* With CONFIG_POST_IO each post_code(c) below writes c to port 80h
++	 * for a POST card (include/cpu/486/post_code.h, newBIOS/POSTCODES.md).
++	 * post_init is empty (it used to set up COM1 for them). */
+ 	post_init
+-	post_code(/*POST_RESET_VECTOR_CORRECT*/ 's')
++	post_code(POST_RESET_VECTOR_CORRECT)
+ 
+ 	/* IMMEDIATELY invalidate the translation lookaside buffer (TLB) before
+ 	 * executing any further code. Even though paging is disabled we
+@@ -77,17 +101,27 @@ _start16bit:
+ 	 */
+ 
+ 	 //486 is not a modern processor :-D
++	 /* invd drops every L1 line without writing it back. */
+ 	 invd
+ 
+ 	/* check if chipset is configured
+ 	 * = segment E/F is shadowed in RAM -> contains seabios -> jump there
+ 	 */
++	/* A CPU-only reset (port 92h fast reset, keyboard controller reset,
++	 * triple fault) does not reset the chipset. If the E and F segments
++	 * are still read from shadow RAM, SeaBIOS is loaded there and can
++	 * handle the reset itself (CMOS shutdown code, e.g. the 286-style
++	 * return from protected mode), so coreboot is skipped. */
+ #if CONFIG(NORTHBRIDGE_ALI_M1489)
+ 	//TODO
+ #elif CONFIG(NORTHBRIDGE_UMC_UM8881)
+ 	//if 0x54 and 0x55 has shadow set -> guess the chipset is configured
+ 	//NOTICE cannot check ram size register, minimum RAM is defined at power on
+ 
++	/* PCI configuration read, mechanism #1: write the address
++	 * (bit 31 enable | bus 0 | device 0x10 | function 0 | register 0x54,
++	 * the UM8881 host bridge) to port 0xCF8, then read the byte at
++	 * 0xCFC + (register & 3). */
+ 	movw	$0xcf8, %dx
+ 	movl	$0x80008054, %eax	//BDFR: 0:0x10:0
+ 	outl	%eax, %dx
+@@ -96,9 +130,12 @@ _start16bit:
+ 	add	%al, %dl
+ 	inb	%dx, %al
+ 
++	/* Register 54h bit 0: E0000-EFFFF read from shadow RAM. */
+ 	test	$0x01, %al
+ 	jz	no_soft_reset	/* segment E not shadowed */
+ 
++	/* Same read for register 55h; bit 7 = global shadow read enable,
++	 * which also selects RAM for F0000-FFFFF. */
+ 	movw	$0xcf8, %dx
+ 	movl	$0x80008055, %eax	//BDFR: 0:0x10:0
+ 	outl	%eax, %dx
+@@ -113,6 +150,9 @@ _start16bit:
+ 
+ #if 1
+ 	//read register 0xf of RTC
++	/* CMOS byte 0Fh = shutdown status, set by software before a CPU
++	 * reset. Port 70h selects the CMOS register; its bit 7 masks NMI
++	 * and is kept as read. 0 = normal reset: do the full coreboot boot. */
+ 	inb	$0x70, %al
+ 	and	$0x80, %al
+ 	or	$0xf, %al
+@@ -133,7 +173,7 @@ _start16bit:
+ 	//chipset is configured -> soft reset (CPU only reset)
+ 	//jump to shadow (seabios or other payload??)
+ 
+-	post_code(/*POST_RESET_VECTOR_CORRECT*/ 'W')
++	post_code(POST_486_SOFT_RESET)
+ 
+ #if 0
+ 	mov	%cr2, %eax
+@@ -152,6 +192,9 @@ _start16bit:
+ 
+ 	//TODO restore EDX?
+ 
++	/* Real-mode far jump to F000:FFF0 = physical 0xFFFF0, which now
++	 * reads shadow RAM: the SeaBIOS reset_vector (romlayout.S) ->
++	 * entry_post -> entry_resume, as if the CPU had reset there. */
+ 	ljmpl	$0xf000, $0xfff0
+ 
+ no_soft_reset:
+@@ -198,26 +241,47 @@ no_soft_reset:
+ 	 * See IA32 manual Vol 3A 19.26 Interrupts.
+ 	 */
+ 
++	/* BX = offset of the descriptor-table image from the CS base.
++	 * bootblock.ld defines nullidt_offset/gdtptr_offset as the low 16
++	 * bits of the linked addresses (0xFFFFFExx). At reset CS = 0xF000 and
++	 * (CS << 4) truncated to 16 bits is 0, so BX is the offset itself and
++	 * %cs:(%bx) reads 0xFFFF0000 + offset, i.e. the flash. */
+ 	movw	%cs, %ax
+ 	shlw	$4, %ax
+ 	movw	$nullidt_offset, %bx
+ 	subw	%ax, %bx
++	/* IDTR := limit 0: no interrupt or exception can be delivered in
++	 * protected mode; one would triple-fault (CPU shutdown cycle).
++	 * It stays so in romstage and postcar; ramstage loads
++	 * a real IDT (idt.S, exception.c). */
+ 	lidt	%cs:(%bx)
+ 	movw	$gdtptr_offset, %bx
+ 	subw	%ax, %bx
++	/* GDTR := gdtptr (gdt_init.S). The "l" suffix (32-bit operand size)
++	 * is required: the 16-bit form loads only 24 bits of the base and
++	 * would miss 0xFFFFFExx. */
+ 	lgdtl	%cs:(%bx)
+ 
+-	post_code('T')
++	post_code(POST_486_GDT)
+ 
++	/* Enter protected mode: PE = 1. CD = NW = 1 keep the L1 cache
++	 * disabled (cache_as_ram.S enables it). Paging, alignment check,
++	 * write protect, task switched and FPU emulation are cleared; NE = 0
++	 * reports FPU errors through IRQ13 as on a PC. */
+ 	movl	%cr0, %eax
+ 	andl	$0x7FFAFFD1, %eax /* PG,AM,WP,NE,TS,EM,MP = 0 */
+ 	orl	$0x60000001, %eax /* CD, NW, PE = 1 */
+ 	movl	%eax, %cr0
+ 
++	/* Now in 16-bit protected mode: CS keeps its hidden real-mode
++	 * descriptor (base 0xFFFF0000) until the far jump below reloads it. */
++
+ 	//pc2005 test CS
+-	post_code('A')
+-	post_code('{')
++	post_code(POST_486_PROTECTED_MODE)
+ 
++#if CONFIG(CONSOLE_SERIAL)
++	/* Debug ROM only: the two raw bytes of the CS selector (expected
++	 * 00 F0) sent to COM1. */
+ 	mov	%cs, %bx
+ 
+ 	movb	%bl, %al
+@@ -235,8 +299,7 @@ no_soft_reset:
+ 	inb	%dx, %al
+ 	testb	$0x20, %al
+ 	jz	1b
+-
+-	post_code('}')
++#endif
+ 
+ 	/* Restore BIST to %eax */
+ 	movl	%ebp, %eax
+@@ -250,15 +313,22 @@ no_soft_reset:
+ 
+ 
+ 	/* Now that we are in protected mode jump to a 32 bit code segment. */
++	/* Far jump with a 32-bit offset: CS := selector 0x08 (flat 4 GiB
++	 * 32-bit code), EIP := bootblock_protected_mode_entry (entry32.S).
++	 * This also flushes the prefetch queue. */
+ 	ljmpl	$ROM_CODE_SEG, $bootblock_protected_mode_entry
+ 
+ 	/**
+ 	 * The gdt is defined in gdt_init.S, it has a 4 Gb code segment
+ 	 * at 0x08, and a 4 GB data segment at 0x10;
+ 	 */
++	/* __gdtptr is an unused leftover: nothing references it (the lgdtl
++	 * above uses gdtptr_offset). */
+ __gdtptr:
+ 	.long	gdtptr
+ 
++/* IDTR image for the lidt above: 16-bit limit 0, 32-bit base 0, then 2
++ * bytes of padding. */
+ .align	4
+ .globl nullidt
+ nullidt:
+diff --git a/src/cpu/486/entry32.S b/src/cpu/486/entry32.S
+index 40595df..1719800 100644
+--- a/src/cpu/486/entry32.S
++++ b/src/cpu/486/entry32.S
+@@ -25,14 +25,23 @@
+  */
+ 	.align	4
+ 
++/*
++ * Entered from entry16.S by "ljmpl $ROM_CODE_SEG": 32-bit protected mode,
++ * CS = 0x08 (flat 4 GiB code from gdt_init.S), paging off, L1 cache off,
++ * interrupts off, no stack yet, EAX = BIST result. Still running in place
++ * from flash. Exit: jump to bootblock_pre_c_entry (cache_as_ram.S).
++ */
+ .globl bootblock_protected_mode_entry
+ bootblock_protected_mode_entry:
+ 
+ 	/* Save the BIST value */
+ 	movl	%eax, %ebp
+ 
+-	post_code(/*POST_ENTER_PROTECTED_MODE*/ '3')
++	post_code(POST_ENTER_PROTECTED_MODE)
+ 
++	/* DS/ES/SS := 0x10, the flat 4 GiB data segment (base 0): from now
++	 * on an address is the physical address. FS/GS get the null
++	 * selector, which is legal as long as they are not used. */
+ 	movw	$ROM_DATA_SEG, %ax
+ 	movw	%ax, %ds
+ 	movw	%ax, %es
+@@ -55,6 +64,8 @@ debug_spinloop:
+ #endif
+ 
+ 
++/* Disabled: early TSC timestamp kept in MMX registers. A 486 has neither
++ * MMX nor a time stamp counter. */
+ #if 0
+ #if !CONFIG(USE_MARCH_586 || USE_MARCH_486)
+ 	/* MMX registers required here */
+diff --git a/src/cpu/486/exit_car.S b/src/cpu/486/exit_car.S
+index 1233b49..92b4480 100644
+--- a/src/cpu/486/exit_car.S
++++ b/src/cpu/486/exit_car.S
+@@ -14,6 +14,15 @@
+ 	jz	1b
+ 
+ 
++/*
++ * chipset_teardown_car(): leave cache-as-RAM (see cache_as_ram.S) by
++ * disabling the cache, then return to the caller.
++ *
++ * NOT IN THE ROM: the only caller, _start in arch/486/exit_car.S, has the
++ * call commented out, and the linker drops this unreferenced .text
++ * (postcar.map lists it under "Discarded input sections"). Postcar
++ * leaves CAR inline in arch/486/exit_car.S instead.
++ */
+ .global chipset_teardown_car
+ 
+ .code32
+@@ -35,6 +44,8 @@ chipset_teardown_car:
+ #endif
+ 
+ 
++	/* The stack lives in CAR and is about to disappear: pop the return
++	 * address into ESP itself (no memory needed) and jump to it below. */
+ 	pop %esp
+ 
+ 	post_code(POST_POSTCAR_DISABLE_CACHE)	/*'0'*/
+@@ -102,4 +113,6 @@ test:
+ 
+ 
+ 	/* Return to caller. */
++	/* ESP still holds the return address, not a stack: the caller must
++	 * load a new ESP before it uses the stack. */
+ 	jmp	*%esp
+diff --git a/src/cpu/486/reset16.S b/src/cpu/486/reset16.S
+index 3858014..feb9277 100644
+--- a/src/cpu/486/reset16.S
++++ b/src/cpu/486/reset16.S
+@@ -1,9 +1,25 @@
+ /* SPDX-License-Identifier: GPL-2.0-only */
+ 
++/*
++ * x86 reset vector: the first instruction the CPU executes.
++ *
++ * After power-on or a hardware reset the 486 runs in real mode at physical
++ * address 0xFFFFFFF0: CS selector 0xF000 but with a hidden base of 0xFFFF0000,
++ * IP 0xFFF0. The chipset maps the top of the 4 GiB space to the flash chip,
++ * and bootblock.ld places this .reset section exactly there (the last 16
++ * bytes; the CBFS header pointer takes the last 4). There is only room for
++ * one near jump, to _start16bit in entry16.S, which must therefore lie in the
++ * same 64 KiB segment (0xFFFF0000-0xFFFFFFFF; bootblock.ld asserts it).
++ */
++
+ 	.section ".reset", "ax", %progbits
+ 	.code16
+ .globl	_start
+ _start:
++	/* 0xE9 = "jmp rel16" in 16-bit code. The displacement is relative to
++	 * the end of the 3-byte instruction: "." is _start + 1 here, so
++	 * ". + 2" is _start + 3. The CPU only reads the low 16 bits of the
++	 * .int; its upper 2 bytes are never executed. */
+ 	.byte  0xe9
+ 	.int   _start16bit - ( . + 2 )
+ 	/* Note: The above jump is hand coded to work around bugs in binutils.
+diff --git a/src/include/console/console.h b/src/include/console/console.h
+index c69efcd..fede3fb 100644
+--- a/src/include/console/console.h
++++ b/src/include/console/console.h
+@@ -44,7 +44,7 @@ static inline int get_console_loglevel(void)
+ #define __CONSOLE_ENABLE__ \
+ 	((ENV_BOOTBLOCK && CONFIG(BOOTBLOCK_CONSOLE)) || \
+ 	 (ENV_POSTCAR && CONFIG(POSTCAR_CONSOLE)) || \
+-	 ENV_SEPARATE_VERSTAGE || ENV_ROMSTAGE || ENV_RAMSTAGE || \
++	 ENV_SEPARATE_VERSTAGE || ((ENV_ROMSTAGE || ENV_RAMSTAGE) && CONFIG(CONSOLE_SERIAL)) /* 486 */ || \
+ 	 ENV_LIBAGESA || (ENV_SMM && CONFIG(DEBUG_SMI)))
+ 
+ #if __CONSOLE_ENABLE__
+diff --git a/src/include/cpu/486/newbios_post.h b/src/include/cpu/486/newbios_post.h
+new file mode 100644
+index 0000000..07287a8
+--- /dev/null
++++ b/src/include/cpu/486/newbios_post.h
+@@ -0,0 +1,36 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++/* newBIOS POST codes on port 80h for the 486 bootblock, romstage and postcar (values not used by
++   commonlib/console/post_codes.h, which covers ramstage). Only #defines: included by assembly.
++   Meanings: newBIOS/POSTCODES.md. */
++#ifndef CPU_486_NEWBIOS_POST_H
++#define CPU_486_NEWBIOS_POST_H
++
++#define POST_486_SOFT_RESET		0x02	/* CMOS shutdown byte set: CPU-only reset, jump to SeaBIOS */
++#define POST_486_GDT			0x03	/* real mode: IDT and GDT loaded */
++#define POST_486_PROTECTED_MODE		0x04	/* CR0.PE set, far jump to 32-bit code next */
++#define POST_486_CAR_FILL		0x22	/* L1 on, reading the cache-as-RAM range into it */
++#define POST_486_CAR_LOCKED		0x23	/* CR0.CD = NW = 1: the L1 lines are now the RAM */
++#define POST_486_CAR_DRAM_OFF		0x26	/* temporary UM8881F DRAM setup removed */
++#define POST_486_CAR_CLEAR		0x27	/* cache-as-RAM zeroed */
++#define POST_486_CAR_STACK		0x28	/* stack in cache-as-RAM, calling the bootblock C code */
++#define POST_486_BOOTBLOCK_C		0x14	/* bootblock C code, stack in cache-as-RAM */
++#define POST_486_BIST_OK		0x15	/* CPU self test passed */
++#define POST_486_EARLY_NORTHBRIDGE	0x16	/* UM8881F: ROM decode, shadow and caches off */
++#define POST_486_EARLY_SOUTHBRIDGE	0x17	/* UM8886BF early setup */
++#define POST_486_EARLY_CPU		0x18
++#define POST_486_LOAD_ROMSTAGE		0x19	/* bootblock done, romstage next */
++
++#define POST_UMC_HOST_BRIDGE		0x30	/* romstage: UM8881F register defaults */
++#define POST_UMC_PCI_QUIESCE		0x31	/* PCI devices turned off before DRAM sizing */
++#define POST_UMC_DRAM			0x32	/* DRAM banks sized (52h/53h/61h) */
++#define POST_UMC_L2			0x33	/* L2 cache sized and enabled */
++#define POST_UMC_SOUTHBRIDGE		0x35	/* UM8886BF early init */
++#define POST_UMC_SETUP_VALUES		0x37	/* setup chipset values from CMOS */
++#define POST_UMC_SHADOW			0x38	/* BIOS copied to shadow RAM E/F, C-F shadowed */
++#define POST_UMC_CBMEM			0x3a	/* CBMEM at the top of RAM */
++#define POST_UMC_LOAD_POSTCAR		0x3b	/* romstage done, postcar next */
++#define POST_486_POSTCAR		0x3c	/* postcar, still on the cache-as-RAM stack */
++#define POST_486_CAR_OFF		0x3d	/* cache-as-RAM left, L1 normal: ramstage next */
++
++#endif
+diff --git a/src/include/cpu/486/post_code.h b/src/include/cpu/486/post_code.h
+index 4cb6e14..0c5e144 100644
+--- a/src/include/cpu/486/post_code.h
++++ b/src/include/cpu/486/post_code.h
+@@ -4,53 +4,15 @@
+ #define __X86_POST_CODE_H__
+ 
+ #include <commonlib/console/post_codes.h>
++#include <cpu/486/newbios_post.h>
+ 
+ #if CONFIG(POST_IO) && !(ENV_BOOTBLOCK && CONFIG(NO_EARLY_BOOTBLOCK_POSTCODES))
+ 
+-#define post_init		\
+-	movw	$0x3f9, %dx;	\
+-	movb	$0x0, %al;	\
+-	outb	%al, %dx;	\
+-	movw	$0x3fb, %dx;	\
+-	movb	$0x80, %al;	\
+-	outb	%al, %dx;	\
+-	movw	$0x3f8, %dx;	\
+-	movb	$1, %al;	\
+-	outb	%al, %dx;	\
+-	movw	$0x3f9, %dx;	\
+-	movb	$0x0, %al;	\
+-	outb	%al, %dx;	\
+-	movw	$0x3fb, %dx;	\
+-	inb	%dx, %al;	\
+-	andb	$0x7f, %al;	\
+-	outb	%al, %dx;	\
+-	movw	$0x3f9, %dx;	\
+-	movb	$0x00, %al;	\
+-	outb	%al, %dx;	\
+-	movw	$0x3fa, %dx;	\
+-	movb	$0xc7, %al;	\
+-	outb	%al, %dx;	\
+-	movw	$0x3fb, %dx;	\
+-	movb	$0x03, %al;	\
+-	outb	%al, %dx;	\
+-	movw	$0x3fc, %dx;	\
+-	movb	$0x01, %al;	\
+-	outb	%al, %dx
+-
+-/*
+-#define post_code(value)	\
+-	movb    $value, %al;    \
+-	outb    %al, $CONFIG_POST_IO_PORT
+-*/
+-
++/* The POST code on port 80h, for a POST card (pc2005 sent these to COM1). */
++#define post_init
+ #define post_code(value)	\
+-	movb	$value, %al;    \
+-	movw	$0x3f8, %dx;	\
+-	outb	%al, %dx;	\
+-1:	movw	$0x3fd, %dx;	\
+-	inb	%dx, %al;	\
+-	testb	$0x20, %al;	\
+-	jz	1b
++	movb	$value, %al;	\
++	outb	%al, $CONFIG_POST_IO_PORT
+ 
+ #else
+ #define post_init
+diff --git a/src/mainboard/biostar/mb8433/Makefile.inc b/src/mainboard/biostar/mb8433/Makefile.inc
+index 067135c..0966fef 100644
+--- a/src/mainboard/biostar/mb8433/Makefile.inc
++++ b/src/mainboard/biostar/mb8433/Makefile.inc
+@@ -3,3 +3,5 @@ bootblock-y += bootblock.c
+ 
+ ramstage-$(CONFIG_GENERATE_PIRQ_TABLE) += irq_tables.c
+ ramstage-$(CONFIG_GENERATE_SMBIOS_TABLES) += smbios.c
++romstage-y += newbios.c
++ramstage-y += newbios.c
+diff --git a/src/mainboard/biostar/mb8433/irq_tables.c b/src/mainboard/biostar/mb8433/irq_tables.c
+index 5775d51..d44d106 100644
+--- a/src/mainboard/biostar/mb8433/irq_tables.c
++++ b/src/mainboard/biostar/mb8433/irq_tables.c
+@@ -5,7 +5,8 @@
+ 
+ // #define IRQ_MASK 0xdef8
+ //e.g. uart init dislike being on the same IRQ as PCI (uart IRQ will be disabled in probe)
+-#define IRQ_MASK 0x8e00
++//IRQ 9-11 like the original BIOS's pool: 12 stays for a PS/2 mouse, 14/15 for the IDE channels
++#define IRQ_MASK 0x0e00
+ 
+ static const struct irq_routing_table mb8433_irq_routing_table = {
+ 	PIRQ_SIGNATURE,
+diff --git a/src/mainboard/biostar/mb8433/newbios.c b/src/mainboard/biostar/mb8433/newbios.c
+new file mode 100644
+index 0000000..91d4d36
+--- /dev/null
++++ b/src/mainboard/biostar/mb8433/newbios.c
+@@ -0,0 +1,107 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++/*
++ * Options of the newBIOS setup utility (CMOS layout in newbios_cmos.h) that coreboot applies:
++ * chipset features, external cache and PCI interrupt routing. The register fields are the ones the
++ * original Award BIOS programs for the same setup values (found with newBIOS/test/oracle).
++ */
++
++#define __SIMPLE_DEVICE__
++
++#include <arch/pirq_routing.h>
++#include <console/console.h>
++#include <device/pci_ops.h>
++#include <pc80/mc146818rtc.h>
++#include <northbridge/umc/um8881/reg_init.h>
++
++#include "newbios_cmos.h"
++
++static int settings_valid(void)
++{
++	u16 sum = 0;
++
++	for (int i = NB_CMOS_BASE; i <= NB_CMOS_SIG; i++)
++		sum += cmos_read(i);
++	return cmos_read(NB_CMOS_SIG) == NB_SIG_VALUE
++		&& sum == (cmos_read(NB_CMOS_SUM) << 8 | cmos_read(NB_CMOS_SUM + 1));
++}
++
++static u8 setting(int index)
++{
++	return NB_CMOS_GET(cmos_read, index);
++}
++
++struct field {
++	u8 setting;
++	pci_devfn_t dev;
++	u8 reg, mask;
++	u8 count, value[4];   /* register field for setting value 0..count-1 */
++};
++
++/* Not timings: applied with Auto Configuration and after unfinished POSTs too, like the original. */
++static const struct field caching[] = {
++	{ NB_SYSBIOS_CACHE,     HOST_BRIDGE, 0x55, 0x20, 2, { 0x00, 0x20 } },
++	{ NB_VIDBIOS_CACHE,     HOST_BRIDGE, 0x55, 0x01, 2, { 0x00, 0x01 } },
++};
++
++static const struct field chipset[] = {
++	{ NB_DRAM_READ_WS,      HOST_BRIDGE, 0x51, 0xc0, 4, { 0x00, 0x40, 0x80, 0xc0 } },	/* 3..0 WS */
++	{ NB_DRAM_WRITE_WS,     HOST_BRIDGE, 0x51, 0x30, 4, { 0x00, 0x10, 0x20, 0x30 } },
++	{ NB_L2_WS,             HOST_BRIDGE, 0x50, 0x30, 4, { 0x00, 0x10, 0x20, 0x30 } },
++	{ NB_HOST_PCI_POST_WS,  HOST_BRIDGE, 0x52, 0x80, 2, { 0x00, 0x80 } },	/* 1 WS, 0 WS */
++	{ NB_HOST_PCI_BURST,    HOST_BRIDGE, 0x53, 0x80, 2, { 0x00, 0x80 } },
++	{ NB_BURST_COPYBACK,    HOST_BRIDGE, 0x53, 0x40, 2, { 0x00, 0x40 } },
++	{ NB_EARLY_CACHE_WRITE, HOST_BRIDGE, 0x5d, 0x80, 2, { 0x00, 0x80 } },
++	{ NB_SLOW_REFRESH,      HOST_BRIDGE, 0x5d, 0x10, 2, { 0x00, 0x10 } },
++	{ NB_EDO,               HOST_BRIDGE, 0x61, 0xc0, 2, { 0x00, 0xc0 } },
++	{ NB_PCI_POSTED_WRITE,  ISA_BRIDGE,  0x40, 0x04, 2, { 0x00, 0x04 } },
++	{ NB_DEVSEL,            ISA_BRIDGE,  0x40, 0x03, 3, { 0x01, 0x00, 0x02 } },	/* slow, medium, fast */
++	{ NB_PCI_BUS_PARK,      ISA_BRIDGE,  0x41, 0x04, 2, { 0x04, 0x00 } },
++	{ NB_PREEMPT_PCI,       ISA_BRIDGE,  0x46, 0x10, 2, { 0x10, 0x00 } },
++	{ NB_KBC_CLOCK,         ISA_BRIDGE,  0x56, 0x0c, 4, { 0x00, 0x04, 0x08, 0x0c } },	/* 7.16 MHz, PCICLK/4 /3 /2 */
++	{ NB_HOST_PCI_CLOCK,    ISA_BRIDGE,  0xa4, 0x03, 3, { 0x01, 0x02, 0x00 } },	/* 1:1, 1:2/3, 1:1/2 */
++};
++
++static void apply(const struct field *f, int count)
++{
++	for (; count--; f++) {
++		u8 v = setting(f->setting);
++		if (v < f->count)
++			pci_update_config8(f->dev, f->reg, ~f->mask, f->value[v]);
++	}
++}
++
++/* Romstage, after the chipset defaults: counts unfinished POSTs (SeaBIOS clears it at the end of
++   POST) so that bad manual timings fall back to the defaults after NB_BOOTFAIL_MAX tries. */
++void newbios_chipset_options(void)
++{
++	u8 fails = cmos_read(NB_CMOS_BOOTFAIL);
++
++	cmos_write(fails < 0xff ? fails + 1 : fails, NB_CMOS_BOOTFAIL);
++	if (!settings_valid())
++		return;
++	if (!setting(NB_L2_CACHE))	/* no wbinvd: the stack is still in the L1 (cache-as-RAM) */
++		pci_update_config8(HOST_BRIDGE, HB50_L2_CFG_0, 0x3f, 0);
++	apply(caching, ARRAY_SIZE(caching));
++	if (setting(NB_SYSBIOS_CACHE)) {	/* as the original BIOS does with this option */
++		pci_write_config8(HOST_BRIDGE, 0x58, 0x0f);
++		pci_write_config8(HOST_BRIDGE, 0x59, 0x00);
++	}
++	if (setting(NB_CHIPSET_AUTO))
++		return;
++	if (fails >= NB_BOOTFAIL_MAX) {
++		printk(BIOS_WARNING, "newBIOS: %u unfinished POSTs, chipset setup values not used\n",
++		       fails);
++		return;
++	}
++	apply(chipset, ARRAY_SIZE(chipset));
++}
++
++/* Ramstage PIRQ routing: links INTA#-INTD# set in setup keep their IRQ. */
++void mainboard_pirq_preset(unsigned char *pirq)
++{
++	if (!settings_valid())
++		return;
++	for (int i = 0; i < 4; i++)
++		pirq[i] = setting(NB_PCI_IRQ_A + i);
++}
+diff --git a/src/mainboard/biostar/mb8433/newbios_cmos.h b/src/mainboard/biostar/mb8433/newbios_cmos.h
+new file mode 100644
+index 0000000..889dce8
+--- /dev/null
++++ b/src/mainboard/biostar/mb8433/newbios_cmos.h
+@@ -0,0 +1,56 @@
++/*
++ * newBIOS CMOS layout, shared by SeaBIOS (setup utility, POST options) and coreboot (chipset options).
++ * build.sh copies this file into both trees. One nibble per setting: index i is in byte
++ * NB_CMOS_BASE + i / 2, low nibble for even i.
++ */
++#ifndef NEWBIOS_CMOS_H
++#define NEWBIOS_CMOS_H
++
++#define NB_CMOS_BASE      0x40
++#define NB_CMOS_PASSWORD  0x78   /* 16-bit hash, 0 = no password */
++#define NB_CMOS_SIG       0x7b   /* NB_SIG_VALUE when the settings below are valid */
++#define NB_CMOS_SUM       0x7c   /* big-endian 16-bit sum of NB_CMOS_BASE..NB_CMOS_SIG */
++#define NB_CMOS_BOOTFAIL  0x7e   /* POSTs started (coreboot) since the last completed one (SeaBIOS) */
++#define NB_SIG_VALUE      0xa4   /* layout version: change when indexes or meanings change */
++#define NB_BOOTFAIL_MAX   2      /* coreboot falls back to chipset defaults after this many failures */
++
++enum nb_setting {
++	/* Standard CMOS */
++	NB_FLOPPY_A, NB_FLOPPY_B,               /* 0 none, 1 360K, 2 1.2M, 3 720K, 4 1.44M, 5 2.88M */
++	NB_IDE_TYPE0, NB_IDE_TYPE1, NB_IDE_TYPE2, NB_IDE_TYPE3,   /* PM, PS, SM, SS: 0 auto, 1 none */
++	NB_IDE_MODE0, NB_IDE_MODE1, NB_IDE_MODE2, NB_IDE_MODE3,   /* 0 auto, 1 normal, 2 LBA, 3 large */
++	/* BIOS features */
++	NB_L1_CACHE, NB_L2_CACHE,               /* 0 disabled, 1 enabled */
++	NB_BOOT1, NB_BOOT2, NB_BOOT3, NB_BOOT4, /* 1 floppy, 2 hard disk, 3 CD-ROM, 4 network */
++	NB_BOOT_DELAY,                          /* setup prompt: 0 1 s, 1 2 s, 2 3 s, 3 5 s */
++	NB_SWAP_FLOPPY, NB_NUMLOCK,
++	NB_TYPEMATIC, NB_TYPEMATIC_RATE, NB_TYPEMATIC_DELAY,  /* rate 6..30 chars/s, delay 250..1000 ms */
++	NB_SECURITY,                            /* 0 setup, 1 system */
++	NB_QUICK_POST,                          /* 1: memory test reads one dword per KiB */
++	NB_SHADOW_C8, NB_SHADOW_CC, NB_SHADOW_D0, NB_SHADOW_D4, NB_SHADOW_D8, NB_SHADOW_DC,
++	/* Chipset features (coreboot, only when NB_CHIPSET_AUTO is 0) */
++	NB_CHIPSET_AUTO,
++	NB_DRAM_READ_WS, NB_DRAM_WRITE_WS,      /* 3, 2, 1, 0 WS */
++	NB_L2_WS,                               /* 3-2-2-2, 3-1-1-1, 2-2-2-2, 2-1-1-1 */
++	NB_KBC_CLOCK, NB_EDO, NB_EARLY_CACHE_WRITE, NB_SYSBIOS_CACHE, NB_VIDBIOS_CACHE,
++	NB_HOST_PCI_POST_WS,                    /* 0: 1 WS, 1: 0 WS */
++	NB_HOST_PCI_BURST, NB_PCI_BUS_PARK, NB_PCI_POSTED_WRITE, NB_SLOW_REFRESH,
++	NB_HOST_PCI_CLOCK, NB_BURST_COPYBACK, NB_PREEMPT_PCI, NB_DEVSEL,
++	/* Power management */
++	NB_APM, NB_HDD_STANDBY,                 /* standby: 0 disabled, n minutes */
++	/* PnP/PCI */
++	NB_PCI_IRQ_A, NB_PCI_IRQ_B, NB_PCI_IRQ_C, NB_PCI_IRQ_D,   /* 0 auto, else IRQ number */
++	NB_IDE_PIO0, NB_IDE_PIO1, NB_IDE_PIO2, NB_IDE_PIO3,       /* 0 auto, n = PIO mode n-1 */
++	NB_IDE_32BIT,
++	/* Integrated peripherals */
++	NB_IDE_PRIMARY, NB_IDE_SECONDARY, NB_FDC,
++	NB_COM1,                                /* 0 disabled, 1 3F8/IRQ4, 2 3E8/IRQ4 */
++	NB_COM2,                                /* 0 disabled, 1 2F8/IRQ3, 2 2E8/IRQ3 */
++	NB_LPT,                                 /* 0 disabled, 1 378/IRQ7, 2 278/IRQ5 */
++	NB_LPT_MODE,                            /* 0 SPP, 1 EPP, 2 ECP */
++	NB_COUNT
++};
++
++#define NB_CMOS_GET(read, i)  (((read)(NB_CMOS_BASE + (i) / 2) >> ((i) % 2 * 4)) & 0x0f)
++
++#endif
+diff --git a/src/northbridge/umc/um8881/bootblock.c b/src/northbridge/umc/um8881/bootblock.c
+index bd565a3..40add1f 100644
+--- a/src/northbridge/umc/um8881/bootblock.c
++++ b/src/northbridge/umc/um8881/bootblock.c
+@@ -12,10 +12,6 @@
+ 
+ void bootblock_early_northbridge_init(void)
+ {
+-	post_code('U');
+-	post_code('M');
+-	post_code('C');
+-
+ 	//enable segment E
+ 	pci_update_config8(ISA_BRIDGE, IBC57_ROM_DECODE, ~0, 0x20);
+ 
+diff --git a/src/northbridge/umc/um8881/northbridge.c b/src/northbridge/umc/um8881/northbridge.c
+index 0bc85cc..2c3acc7 100644
+--- a/src/northbridge/umc/um8881/northbridge.c
++++ b/src/northbridge/umc/um8881/northbridge.c
+@@ -269,8 +269,8 @@ void mp_init_cpus(struct bus *cpu_bus)
+ 
+ 	//TODO make seg E/F shadow+writeable ?
+ 
+-	//no cacheable bios
+-	pci_update_config8(HOST_BRIDGE, HB55_SHADOW_CFG, ~0x3f, 0);
++	//no cacheable bios, but System (bit 5) and Video (bit 0) BIOS Cacheable stay as set up in romstage
++	pci_update_config8(HOST_BRIDGE, HB55_SHADOW_CFG, ~0x1e, 0);
+ 
+ 	//CSEG shadow
+ 	// printk(BIOS_INFO, "++++RAM++++ segment Call use RAM shadow\n");
+diff --git a/src/northbridge/umc/um8881/reg_init.h b/src/northbridge/umc/um8881/reg_init.h
+index 3cafb81..0fb90ce 100644
+--- a/src/northbridge/umc/um8881/reg_init.h
++++ b/src/northbridge/umc/um8881/reg_init.h
+@@ -82,6 +82,8 @@ HB61=c4
+ #include <types.h>
+ #include <device/pci_type.h>
+ 
++void newbios_chipset_options(void);
++
+ #define HOST_BRIDGE		PCI_DEV(0, 0x10, 0)
+ #define ISA_BRIDGE		PCI_DEV(0, 0x12, 0)
+ #define IDE_CONTROLLER		PCI_DEV(0, 0x12, 1)
+diff --git a/src/northbridge/umc/um8881/romstage.c b/src/northbridge/umc/um8881/romstage.c
+index fc091da..277e7a4 100644
+--- a/src/northbridge/umc/um8881/romstage.c
++++ b/src/northbridge/umc/um8881/romstage.c
+@@ -5,25 +5,51 @@
+ #include <console/console.h>
+ #include <arch/romstage.h>
+ #include <cbmem.h>
++#include <cpu/486/newbios_post.h>
+ #include <device/mmio.h>
++#include <device/pci_def.h>
++#include <device/pci_ids.h>
+ #include <device/pci_ops.h>
+ #include <string.h>	//for memcpy
+ 
+ #include "reg_init.h"
+ 
++/*
++ * After a CPU-only reset (port 92h, keyboard controller) PCI cards keep decoding their BARs, and a
++ * memory BAR above the RAM (e.g. a VGA framebuffer) would be sized as DRAM. Turn off all devices
++ * except bridges and IDE (legacy I/O only) before the DRAM probe; ramstage enables them again.
++ */
++void __weak newbios_chipset_options(void)
++{
++}
++
++static void pci_quiesce_devices(void)
++{
++	for (unsigned int devfn = 0; devfn < 0x100; devfn++) {
++		const pci_devfn_t dev = PCI_DEV(0, PCI_SLOT(devfn), PCI_FUNC(devfn));
++		const u16 class = pci_read_config16(dev, PCI_CLASS_DEVICE);
++
++		if (pci_read_config16(dev, PCI_VENDOR_ID) == 0xffff
++				|| (class >> 8) == PCI_BASE_CLASS_BRIDGE || class == PCI_CLASS_STORAGE_IDE)
++			continue;
++		pci_write_config16(dev, PCI_COMMAND, 0);
++	}
++}
++
+ 
+ static const struct umc_cfg_entry hb_init_table[] = {
+-	//2111
++	//Auto Configuration = the original BIOS's values for a 33 MHz bus (its own table, verified in
++	//86Box): L2 3-1-1-1, DRAM read and write 1 WS, no burst copy-back, no EDO. The faster 2-1-1-1,
++	//0 WS read and EDO values used before froze benchmarks on the real board.
+ 	//NOTICE wriback must be enabled at exit_car after filling
+-	{HB50_L2_CFG_0,			0x40 | 0x30,	0x30},
++	{HB50_L2_CFG_0,			0x40 | 0x30,	0x10},
+ 
+-	//TODO TEST one freezes benches
+-	{HB51_L2_CFG_1,			0xff,	0xa4 | 0xc0 /*| 0x30*/},
++	{HB51_L2_CFG_1,			0xff,	0xa4},
+ 
+ 	// {HB52_DRAM_CFG_0,		0,	0xe6},
+ 	// {HB53_DRAM_CFG_1,		0,	0x8f},
+ 	{HB52_DRAM_CFG_0,		0x00,	0x80},
+-	{HB53_DRAM_CFG_1,		0x00,	0x80 | 0x40},
++	{HB53_DRAM_CFG_1,		0x40,	0x80},
+ 
+ 	{HB54_SHADOW_EN,		0xff,	0x00},
+ 	{HB55_SHADOW_CFG,		0xff,	0x40},	//readonly
+@@ -38,8 +64,7 @@ static const struct umc_cfg_entry hb_init_table[] = {
+ 	//5e-5f unknown, implemented
+ 	{HB60_SMRAM_2,			0xff,	0x00},
+ 
+-	//TODO TEST one freezes benches
+-	{HB61_EDO_CFG,			0xff,	0xc4 /*| 0x8*/},	//EDO 3-1-1-1
++	{HB61_EDO_CFG,			0xff,	0x04},
+ 	{HB62_BURST,			0xff,	0x01},
+ };
+ 
+@@ -54,6 +79,7 @@ void mainboard_romstage_entry(void)
+ 	printk(BIOS_DEBUG, "mainboard romstage\n");
+ 
+ 	//init HB registers
++	post_code(POST_UMC_HOST_BRIDGE);
+ 	umc_registers_init(
+ 		HOST_BRIDGE,
+ 		hb_init_table,
+@@ -61,10 +87,15 @@ void mainboard_romstage_entry(void)
+ 	);
+ 	//TODO make some configurable from CMOS
+ 
++	post_code(POST_UMC_PCI_QUIESCE);
++	pci_quiesce_devices();
++
+ 	//detect dram, L2 disabled (no interference)
++	post_code(POST_UMC_DRAM);
+ 	dram_init();
+ 
+ 	//L2 cache initialization
++	post_code(POST_UMC_L2);
+ 	l2_cache_init();
+ 
+ 	//NOTICE L2 is configured and enabled now
+@@ -73,8 +104,12 @@ void mainboard_romstage_entry(void)
+ 
+ 	printk(BIOS_INFO, "RAM size %lu kiB\n", cbmem_top_chipset()/KiB);
+ 
++	post_code(POST_UMC_SOUTHBRIDGE);
+ 	um8886_early_init();
+ 
++	post_code(POST_UMC_SETUP_VALUES);
++	newbios_chipset_options();
++
+ /*
+ 	printk(BIOS_DEBUG, "Erase high RAM\n");
+ 	for (uintptr_t addr = 128*MiB - 1*MiB; addr < 128*MiB; addr+=4) {
+@@ -87,6 +122,7 @@ void mainboard_romstage_entry(void)
+ 	//move raminit to bootblock?
+ 
+ 	//disable write protect
++	post_code(POST_UMC_SHADOW);
+ 	pci_update_config8(HOST_BRIDGE, HB55_SHADOW_CFG, ~0x40, 0);
+ 
+ 	//copy ROME to shadowE
+@@ -159,7 +195,9 @@ void mainboard_romstage_entry(void)
+ 
+ // printk(BIOS_DEBUG, "cbmem_initialize {\n");
+ 
++	post_code(POST_UMC_CBMEM);
+ 	cbmem_initialize_empty();
+ 
+ 	printk(BIOS_DEBUG, "UMC HB romstage exit\n");
++	post_code(POST_UMC_LOAD_POSTCAR);
+ }
+diff --git a/src/southbridge/umc/um8886/ide.c b/src/southbridge/umc/um8886/ide.c
+index bdff26f..8974cb5 100644
+--- a/src/southbridge/umc/um8886/ide.c
++++ b/src/southbridge/umc/um8886/ide.c
+@@ -52,8 +52,8 @@ static const struct umc_cfg_entry ide_table[] = {
+ 	// {0x04, 0xff, 0x0f},	//enable PCI comm
+ 
+ 	{0x40, 0xff, 0x00},
+-	//primary and secondary TODO check if sec IO disappear in linux
+-	{0x41, 0xff, 0x80 /*| 0x40*/ | 0xd},
++	//primary and secondary channels, like the original BIOS
++	{0x41, 0xff, 0x80 | 0x40 | 0xd},
+ 	{0x42, 0xff, 0x33},
+ 
+ 	//NOTICE this won't boot .. check!!!!
+diff --git a/src/southbridge/umc/um8886/pirq.c b/src/southbridge/umc/um8886/pirq.c
+index a42b842..648a16d 100644
+--- a/src/southbridge/umc/um8886/pirq.c
++++ b/src/southbridge/umc/um8886/pirq.c
+@@ -18,9 +18,8 @@ void pirq_assign_irqs(const unsigned char route[CONFIG_MAX_PIRQ_LINKS])
+ 	// printk(BIOS_DEBUG, "PIRQ assign R[2]=%x\n", route[2]);
+ 	// printk(BIOS_DEBUG, "PIRQ assign R[3]=%x\n", route[3]);
+ 
+-	struct device * const  pdev = dev_find_device(
+-		PCI_VID_UMC, PCI_DID_UMC_UM8886A, 0
+-	);
++	/* Found by location: the IBC reports 886a or 888a (both "UM8886A") */
++	struct device * const  pdev = pcidev_on_root(0x12, 0);
+ 	if (!pdev) {
+ 		printk(BIOS_ERR, "UMC IBC not found, cannot assign PIRQ!\n");
+ 		return;

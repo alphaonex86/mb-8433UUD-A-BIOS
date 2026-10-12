@@ -1,0 +1,151 @@
+== bios-0: Virus Warning : Enabled Video BIOS Shadow : Enabled
+== bios-1: CPU Internal Cache : Disabled C8000-CBFFF Shadow : Disabled
+== bios-10: Typematic Rate Setting : Enabled
+== bios-11: Typematic Rate (Chars/Sec) : 8
+== bios-12: Typematic Delay (Msec) : 500
+== bios-13: Security Option : System
+== bios-14: IDE Second Channel Control : Disabled ESC : Quit : Select Item
+== bios-15: Virus Warning : Disabled Video BIOS Shadow : Disabled
+== bios-16: CPU Internal Cache : Enabled C8000-CBFFF Shadow : Enabled
+== bios-17: External Cache : Enabled CC000-CFFFF Shadow : Enabled
+== bios-18: Quick Power On Self Test : Enabled D0000-D3FFF Shadow : Enabled
+== bios-19: Boot Sequence : A,C D4000-D7FFF Shadow : Enabled
+== bios-2: External Cache : Disabled CC000-CFFFF Shadow : Disabled
+    00:10.0 50: f4->34
+== bios-20: Swap Floppy Drive : Disabled D8000-DBFFF Shadow : Enabled
+== bios-21: Boot Up Floppy Seek : Enabled DC000-DFFFF Shadow : Enabled
+== bios-3: Quick Power On Self Test : Disabled D0000-D3FFF Shadow : Disabled
+== bios-4: Boot Sequence : C,A D4000-D7FFF Shadow : Disabled
+== bios-5: Swap Floppy Drive : Enabled D8000-DBFFF Shadow : Disabled
+== bios-6: Boot Up Floppy Seek : Disabled DC000-DFFFF Shadow : Disabled
+== bios-7: Boot Up NumLock Status : Off
+== bios-8: Gate A20 Option : Normal
+== bios-9: Memory Parity Check : Enabled
+    00:10.0 05: 00->01
+    00:10.0 5a: 0d->1d
+    00:10.0 60: 02->00
+    00:12.0 41: 42->02
+== chip-1: DRAM Read Wait States : 0 WS Preempt PCI Master Option: Disabled
+    00:10.0 51: a6->e6
+== chip-10: HOST-to-PCI Post Write : 1 WS
+    00:10.0 52: e6->66
+== chip-11: HOST-to-PCI Burst Write : Disabled
+    00:10.0 53: 85->05
+== chip-12: PCI Bus Park Option : Disabled ESC : Quit : Select Item
+    00:12.0 41: 42->46
+== chip-13: PCI Posted Memory Write : Disabled F1 : Help PU/PD/+/- : Modify
+    00:12.0 40: 05->01
+== chip-14: Slow Refresh (1/4 Freq) : Disabled F5 : Old Values (Shift)F2 : Color
+    00:10.0 5d: 30->20
+== chip-15: Auto Configuration : Disabled HOST Clock / PCI Clock : 1 : 2/3
+    00:12.0 a4: 81->82
+== chip-16: Burst Copy-Back Option : Enabled
+    00:10.0 53: 85->c5
+== chip-17: DRAM Read Wait States : 1 WS Preempt PCI Master Option: Enabled
+    00:12.0 46: 10->00
+== chip-18: DRAM Write Wait States : 1 WS IBC DEVSEL# Decoding : Fast
+    00:12.0 40: 05->06
+== chip-19: EDO DRAM install option : Disabled Onboard FDD Controller : Disabled
+    sio c0: 0f->0e
+== chip-2: DRAM Write Wait States : 0 WS IBC DEVSEL# Decoding : Slow
+    00:10.0 51: a6->b6
+== chip-20: L1 Cache Update Scheme : Wr-Back Onboard Parallel Mode : ECP
+    sio c1: bb->fb
+== chip-21: Early Cache Write Mode : Disabled Onboard Parallel Port : 278H
+    sio c1: bb->b3
+== chip-22: System BIOS Cacheable : Enabled Onboard Serial Port 1 : COM3/3E8
+    sio c1: bb->b9
+== chip-23: Video BIOS Cacheable : Enabled Onboard Serial Port 2 : Disabled
+    sio c0: 0f->0b
+    sio c1: bb->bf
+== chip-3: L2 Cache Wait States : 2-2-2-2
+    00:10.0 50: d4->e4
+== chip-4: Keyboard Controller Clock: PCICLKI/4
+    00:12.0 56: 01->05
+== chip-5: EDO DRAM install option : Enabled Onboard FDD Controller : Enabled
+    00:10.0 61: 04->c4
+== chip-6: L1 Cache Update Scheme : Wr-Through Onboard Parallel Mode : SPP
+== chip-7: Early Cache Write Mode : Enabled Onboard Parallel Port : 378H
+    00:10.0 5d: 30->b0
+== chip-8: System BIOS Cacheable : Disabled Onboard Serial Port 1 : COM1/3F8
+    00:10.0 55: e1->c1
+== chip-9: Video BIOS Cacheable : Disabled Onboard Serial Port 2 : COM4/2E8
+    00:10.0 55: e1->e0
+== chip2-1: DRAM Read Wait States : 3 WS Preempt PCI Master Option: Disabled
+    00:10.0 51: a6->26
+== chip2-15: Auto Configuration : Disabled HOST Clock / PCI Clock : 1 : 1/2
+    00:12.0 a4: 81->80
+== chip2-18: DRAM Write Wait States : 1 WS IBC DEVSEL# Decoding : Medium
+    00:12.0 40: 05->04
+== chip2-2: DRAM Write Wait States : 3 WS IBC DEVSEL# Decoding : Slow
+    00:10.0 51: a6->86
+== chip2-20: L1 Cache Update Scheme : Wr-Back Onboard Parallel Mode : EPP
+    sio c1: bb->7b
+== chip2-21: L1 Cache Update Scheme : Wr-Back | Early Cache Write Mode : Disabled Onboard Parallel Port : Disabled
+    sio c0: 0f->07
+== chip2-22: System BIOS Cacheable : Enabled Onboard Serial Port 1 : Disabled
+    sio c0: 0f->0d
+== chip2-23: Video BIOS Cacheable : Enabled Onboard Serial Port 2 : COM2/2F8
+    sio c1: bb->bf
+== chip2-3: L2 Cache Wait States : 2-1-1-1
+    00:10.0 50: d4->f4
+== chip2-4: Keyboard Controller Clock: PCICLKI/3
+    00:12.0 56: 01->09
+== chip3-1: DRAM Read Wait States : 2 WS Preempt PCI Master Option: Disabled
+    00:10.0 51: a6->66
+== chip3-15: 
+== chip3-18: 
+== chip3-2: DRAM Write Wait States : 2 WS IBC DEVSEL# Decoding : Slow
+    00:10.0 51: a6->96
+== chip3-20: 
+== chip3-21: 
+== chip3-22: 
+== chip3-23: 
+== chip3-3: L2 Cache Wait States : 3-2-2-2
+    00:10.0 50: d4->c4
+== chip3-4: Keyboard Controller Clock: PCICLKI/2
+    00:12.0 56: 01->0d
+== pci-0: PnP BIOS Auto-Config: Disabled * WakeUp Event In Inactive Mode | 1st Available IRQ : 11 IRQ9 Wake Up : Disabled | 2nd Available IRQ : 10 IRQ10 Wake Up : Enabled | 3rd Available IRQ : 9 IRQ11 Wake Up : Enabled | 4th Available IRQ : 12 IRQ12 Wake Up : Enabled
+== pci-1: Slot 1 Using INT# : A IRQ4 Wake Up : Enabled
+== pci-10: IDE Secondary Master PIO : Mode 0 F5 : Old Values (Shift)F2 : Color
+== pci-11: IDE Secondary Slave PIO : Mode 0 F7 : Load Setup Defaults
+== pci-12: Assign IRQ For VGA : Enabled
+    00:03.0 3c: ff->0c
+    00:12.0 43: 9a->ca
+    00:12.0 46: 10->11
+    00:12.0 47: 70->71
+== pci-13: IRQ3 Wake Up : Disabled
+    00:12.0 90: 9a->92
+== pci-14: Slot 1 Using INT# : AUTO IRQ4 Wake Up : Disabled
+    00:12.0 90: 9a->8a
+== pci-15: Slot 2 Using INT# : AUTO IRQ5 Wake Up : Enabled
+    00:12.0 90: 9a->ba
+== pci-16: Slot 3 Using INT# : AUTO IRQ7 Wake Up : Disabled
+    00:12.0 90: 9a->1a
+== pci-17: IRQ9 Wake Up : Enabled
+    00:12.0 91: 5c->5e
+== pci-18: IRQ10 Wake Up : Disabled
+    00:12.0 91: 5c->58
+== pci-19: IRQ11 Wake Up : Disabled
+    00:12.0 91: 5c->54
+== pci-2: Slot 2 Using INT# : A IRQ5 Wake Up : Disabled
+== pci-20: IRQ12 Wake Up : Disabled
+    00:12.0 91: 5c->4c
+== pci-21: PCI IRQ Actived By : Level IRQ14 Wake Up : Disabled
+    00:12.0 91: 5c->1c
+== pci-22: PCI IDE Controller : Enabled IRQ15 Wake Up : Enabled
+    00:12.0 91: 5c->dc
+== pci-3: Slot 3 Using INT# : A IRQ7 Wake Up : Enabled
+== pci-4: PCI IRQ Actived By : Edge IRQ14 Wake Up : Enabled
+== pci-5: PCI IDE Controller : Disabled IRQ15 Wake Up : Disabled
+    00:12.1 04: 07->00
+== pci-6: PCI IDE IRQ Map To : PCI-SLOT1 | Primary IDE INT# : A | Secondary IDE INT# : B
+== pci-7: IDE HDD Block Mode : Disabled
+== pci-8: IDE Primary Master PIO : Mode 0 ESC : Quit : Select Item
+== pci-9: IDE Primary Slave PIO : Mode 0 F1 : Help PU/PD/+/- : Modify
+== pio-0: NO DATA
+== pio-1: IDE Primary Master PIO : Mode 0 ESC : Quit : Select Item
+== pio-2: IDE Primary Master PIO : Mode 1 ESC : Quit : Select Item
+== pio-3: IDE Primary Master PIO : Mode 2 ESC : Quit : Select Item
+== pio-4: IDE Primary Master PIO : Mode 3 ESC : Quit : Select Item
+== pio-5: IDE Primary Master PIO : Mode 4 ESC : Quit : Select Item

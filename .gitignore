@@ -1,0 +1,10 @@
+# Downloaded (fetch_sources.sh) or built
+/sources/
+/build/
+/out/
+# Local VMs (run_86box.sh, tests)
+/vm/
+/test/vm/
+# Not redistributable: the board's original Award BIOS dump, NIC boot ROMs
+/BIOSORIGINAL.bin
+/test/roms/
