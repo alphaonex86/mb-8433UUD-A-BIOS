@@ -65,9 +65,9 @@ this order, so this table is the reference.
 | `B3` | SeaBIOS | POST screen (text mode 80x25) | |
 | `B4` | SeaBIOS | keyboard, USB, floppy and IDE drives detected | a drive that does not answer |
 | `B5` | SeaBIOS | POST memory test | (the screen shows the memory count) |
-| `B6` | SeaBIOS | option ROMs: ISA cards (C8000-DFFFF), network boot ROM | an option ROM |
+| `B6` | SeaBIOS | ISA PnP cards configured, then option ROMs: ISA cards (C8000-DFFFF), network boot ROM | a PnP card or an option ROM |
 | `B7` | SeaBIOS | system configuration box | |
-| `B8` | SeaBIOS | `Press DEL to enter SETUP, ESC for boot menu` | (waits for the keys or the boot delay) |
+| `B8` | SeaBIOS | POST errors (Halt On: `Press F1 to continue`), then `Press DEL to enter SETUP, ESC for boot menu` | (waits for F1/DEL, the keys or the boot delay) |
 | `BB` | SeaBIOS | boot preparation: setup values, tables, BIOS write-protected | |
 | `BC` | SeaBIOS | booting a device (INT 19h); one per device tried | boot sector or operating system |
 

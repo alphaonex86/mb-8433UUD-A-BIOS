@@ -12,8 +12,8 @@ hdd_01_parameters = 63, 16, 20, 0, ide
 hdd_01_fn = $vm_dir/sec.img
 hdd_01_ide_channel = 1:0"
 
-vm_wait_text "Press DEL to enter SETUP, ESC for boot" 60
-vm_expect "CMOS settings invalid - defaults loaded"
+vm_end_of_post 60
+vm_expect "CMOS checksum error - Defaults loaded"
 vm_expect "Sec. Master Disk : 9MB"
 vm_expect "CPU Type     : Am5x86"
 vm_setup
@@ -29,9 +29,10 @@ vm_expect "Secondary Master : Auto +9M +20 +16 +63"
 year=$(sed -nE 's/.*Date \(mm:dd:yy\) : [0-9]+:[0-9]+:([0-9]{4}).*/\1/p' "$vm/screen.txt")
 vm_key $K_RIGHT $K_RIGHT $K_PGDN                  # year + 1
 for _ in $(seq 12); do vm_key $K_DOWN; done       # Drive A
-vm_key $K_PGDN $K_PGDN $K_PGDN $K_PGDN            # None -> 1.44M
+vm_expect "Drive A : 1.44M, 3.5 in."               # default, as the original BIOS
+vm_key $K_PGDN                                    # 1.44M -> 2.88M
 vm_expect "Date \(mm:dd:yy\) : [0-9]+:[0-9]+:$((year + 1))"
-vm_expect "Drive A : 1.44M, 3.5 in."
+vm_expect "Drive A : 2.88M, 3.5 in."
 vm_key $K_ESC
 vm_menu 1                                         # BIOS FEATURES SETUP
 vm_wait_text "Boot Up NumLock Status" 5
@@ -42,13 +43,13 @@ vm_expect "3rd Boot Device +: Hard Disk"
 vm_expect "4th Boot Device +: CD-ROM"
 vm_save
 
-vm_wait_text "Press DEL to enter SETUP, ESC for boot" 60
-grep -q "CMOS settings invalid" "$vm/screen.txt" && fail "settings lost after reboot"
-vm_expect "Diskette Drive A : 1.44M"
+vm_end_of_post 60
+grep -q "CMOS checksum error" "$vm/screen.txt" && fail "settings lost after reboot"
+vm_expect "Diskette Drive A : 2.88M"
 vm_setup
 vm_menu 0
 vm_wait_text "Date \(mm:dd:yy\) : [0-9]+:[0-9]+:$((year + 1))" 5
-vm_expect "Drive A : 1.44M, 3.5 in."
+vm_expect "Drive A : 2.88M, 3.5 in."
 vm_key $K_ESC
 vm_menu 1
 vm_wait_text "1st Boot Device +: Network" 5
@@ -63,6 +64,7 @@ vm_key $K_PGDN
 vm_wait_text "IRQ 15 : IDE secondary" 5
 vm_key $K_PGDN
 vm_wait_text "Secondary Master : 86B_HD" 5
+vm_expect "PIO mode [0-4] \(drive max [0-4]\), block (2|4|8|16|32|64|128) "   # IDE HDD Block Mode
 vm_key $K_PGDN
 vm_wait_text "UM8881F +00:10.0" 5
 vm_key $K_PGDN                                    # measured on opening, no longer at POST

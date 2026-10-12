@@ -6,7 +6,7 @@ mkdir -p "$vm_dir"
 normal=$(sed -n '/^## Normal boot/,/^## Other/p' "$nb/POSTCODES.md" | grep -oE '^\| `[0-9A-F]{2}`' | grep -oE '[0-9A-F]{2}')
 codes() { tr '\n' ' ' < "$vm/post.log" | sed 's/ $//'; }
 vm_start post "$rom"
-vm_wait_text "Press DEL to enter SETUP, ESC for boot" 60
+vm_end_of_post 60
 upto_prompt=$(echo "$normal" | sed '/^B8$/q' | tr '\n' ' ' | sed 's/ $//')
 [ "$(codes)" = "$upto_prompt" ] || fail "POST codes: $(codes) - expected: $upto_prompt"
 vm_setup

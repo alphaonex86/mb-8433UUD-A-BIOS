@@ -25,7 +25,7 @@ award="$* $memory $cache $(fields)"
 vm_kill
 
 vm_start oracle-ram-newbios "$rom"
-vm_wait_text "Press DEL to enter SETUP, ESC for boot" 180
+vm_end_of_post 180
 memory=$(($(grep -oE "Extended Memory  : [0-9]+K" "$vm/screen.txt" | grep -oE "[0-9]+") + 1024))
 cache=$(grep -oE "Cache Memory     : [0-9]+K" "$vm/screen.txt" | awk '{print $NF}' | sed 's/^0K$/none/')
 newbios="$* $memory $cache $(fields)"

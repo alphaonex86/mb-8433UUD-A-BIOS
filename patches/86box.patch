@@ -821,20 +821,22 @@ index f842cbb338f9527099a3a53bb83d7c3359e3b786..bf9c096af36fcc9ab4d605b2e51be3da
          postcard_written[port & POSTCARD_MASK]++;
  
 diff --git a/src/disk/hdc_ide.c b/src/disk/hdc_ide.c
-index e2ffcab024fd0e8190dd5ad0b4ba11c609cc2347..39e4c3e54b73a8bd52955aeb833a14ba526926b3 100644
+index e2ffcab024fd0e8190dd5ad0b4ba11c609cc2347..9d971e7bf268bc359169c3de07fcd22f8aaf9923 100644
 --- a/src/disk/hdc_ide.c
 +++ b/src/disk/hdc_ide.c
-@@ -74,6 +74,9 @@
+@@ -74,6 +74,11 @@
  #define WIN_RECAL                      0x10
  #define WIN_READ                       0x20 /* 28-Bit Read */
  #define WIN_READ_NORETRY               0x21 /* 28-Bit Read - no retry */
 +#define WIN_READ_EXT                   0x24 /* 48-Bit Read */
 +#define WIN_WRITE_EXT                  0x34 /* 48-Bit Write */
 +#define WIN_VERIFY_EXT                 0x42 /* 48-Bit Verify */
++#define WIN_READ_MULTIPLE_EXT          0x29 /* 48-Bit Read Multiple */
++#define WIN_WRITE_MULTIPLE_EXT         0x39 /* 48-Bit Write Multiple */
  #define WIN_WRITE                      0x30 /* 28-Bit Write */
  #define WIN_WRITE_NORETRY              0x31 /* 28-Bit Write - no retry */
  #define WIN_VERIFY                     0x40 /* 28-Bit Verify */
-@@ -621,6 +624,16 @@ ide_hd_identify(const ide_t *ide)
+@@ -621,6 +626,16 @@ ide_hd_identify(const ide_t *ide)
      ide->buffer[83] = ide->buffer[84] = 0x4000;
      ide->buffer[86] = 0x0000;
      ide->buffer[87] = 0x4000;
@@ -851,7 +853,7 @@ index e2ffcab024fd0e8190dd5ad0b4ba11c609cc2347..39e4c3e54b73a8bd52955aeb833a14ba
  }
  
  static void
-@@ -786,6 +799,36 @@ ide_get_sector_format(ide_t *ide)
+@@ -786,6 +801,43 @@ ide_get_sector_format(ide_t *ide)
      }
  }
  
@@ -859,8 +861,15 @@ index e2ffcab024fd0e8190dd5ad0b4ba11c609cc2347..39e4c3e54b73a8bd52955aeb833a14ba
 +static void
 +ide_ext_start(ide_t *ide, uint8_t *cmd)
 +{
-+    if ((ide->type != IDE_HDD) ||
-+        ((*cmd != WIN_READ_EXT) && (*cmd != WIN_WRITE_EXT) && (*cmd != WIN_VERIFY_EXT)))
++    static const uint8_t ext[][2] = { { WIN_READ_EXT, WIN_READ }, { WIN_WRITE_EXT, WIN_WRITE },
++                                      { WIN_VERIFY_EXT, WIN_VERIFY },
++                                      { WIN_READ_MULTIPLE_EXT, WIN_READ_MULTIPLE },
++                                      { WIN_WRITE_MULTIPLE_EXT, WIN_WRITE_MULTIPLE } };
++    int i = 0;
++    ide->ext_left = 0;
++    while ((i < 5) && (ext[i][0] != *cmd))
++        i++;
++    if ((ide->type != IDE_HDD) || (i == 5))
 +        return;
 +    uint32_t count = (ide->hob[0] << 8) | ide->tf->secount;
 +    if (!count)
@@ -870,7 +879,7 @@ index e2ffcab024fd0e8190dd5ad0b4ba11c609cc2347..39e4c3e54b73a8bd52955aeb833a14ba
 +    ide->tf->lba     = 1;
 +    ide->tf->secount = (count > 256 ? 256 : count) & 0xff;
 +    ide->ext_left    = count > 256 ? count - 256 : 0;
-+    *cmd = (*cmd == WIN_READ_EXT) ? WIN_READ : (*cmd == WIN_WRITE_EXT) ? WIN_WRITE : WIN_VERIFY;
++    *cmd = ext[i][1];
 +}
 +
 +/* End of a segment: start the next one of an LBA48 command; returns 1 if there is one. */
@@ -888,7 +897,16 @@ index e2ffcab024fd0e8190dd5ad0b4ba11c609cc2347..39e4c3e54b73a8bd52955aeb833a14ba
  /**
   * Move to the next sector using CHS addressing
   */
-@@ -1697,18 +1740,25 @@ ide_writeb(uint16_t addr, uint8_t val, void *priv)
+@@ -1414,7 +1466,7 @@ ide_write_data(ide_t *ide, const uint16_t val)
+                     if (hdd[ide->hdd_num].speed_preset == 0) {
+                         ide->pending_delay = 0;
+                         ide_callback(ide);
+-                    } else if ((ide->blockcount + 1) >= ide->blocksize || ide->tf->secount == 1) {
++                    } else if ((ide->blockcount + 1) >= ide->blocksize || (ide->tf->secount == 1 && !ide->ext_left)) {
+                         ide_set_callback(ide, seek_time + xfer_time + ide->pending_delay);
+                         ide->pending_delay = 0;
+                     } else {
+@@ -1697,18 +1749,25 @@ ide_writeb(uint16_t addr, uint8_t val, void *priv)
  
          case 0x2: /* Sector count */
              if (!(ide->tf->atastat & (BSY_STAT | DRQ_STAT)))
@@ -915,7 +933,7 @@ index e2ffcab024fd0e8190dd5ad0b4ba11c609cc2347..39e4c3e54b73a8bd52955aeb833a14ba
                  ide_other->tf->sector  = val;
                  ide_other->lba_addr    = (ide_other->lba_addr & 0xfffff00) | val;
              }
-@@ -1716,11 +1766,13 @@ ide_writeb(uint16_t addr, uint8_t val, void *priv)
+@@ -1716,11 +1775,13 @@ ide_writeb(uint16_t addr, uint8_t val, void *priv)
  
          case 0x4: /* Cylinder low */
              if (!(ide->type & IDE_SHADOW) && !(ide->tf->atastat & (BSY_STAT | DRQ_STAT))) {
@@ -929,7 +947,7 @@ index e2ffcab024fd0e8190dd5ad0b4ba11c609cc2347..39e4c3e54b73a8bd52955aeb833a14ba
                  ide_other->tf->cylinder = (ide_other->tf->cylinder & 0xff00) | val;
                  ide_other->lba_addr     = (ide_other->lba_addr & 0xfff00ff) | (val << 8);
              }
-@@ -1728,11 +1780,13 @@ ide_writeb(uint16_t addr, uint8_t val, void *priv)
+@@ -1728,11 +1789,13 @@ ide_writeb(uint16_t addr, uint8_t val, void *priv)
  
          case 0x5: /* Cylinder high */
              if (!(ide->type & IDE_SHADOW) && !(ide->tf->atastat & (BSY_STAT | DRQ_STAT))) {
@@ -943,7 +961,7 @@ index e2ffcab024fd0e8190dd5ad0b4ba11c609cc2347..39e4c3e54b73a8bd52955aeb833a14ba
                  ide_other->tf->cylinder = (ide_other->tf->cylinder & 0xff) | (val << 8);
                  ide_other->lba_addr     = (ide_other->lba_addr & 0xf00ffff) | (val << 16);
              }
-@@ -1789,6 +1843,7 @@ ide_writeb(uint16_t addr, uint8_t val, void *priv)
+@@ -1789,6 +1852,7 @@ ide_writeb(uint16_t addr, uint8_t val, void *priv)
                  break;
  
              ide_irq_lower(ide);
@@ -951,7 +969,7 @@ index e2ffcab024fd0e8190dd5ad0b4ba11c609cc2347..39e4c3e54b73a8bd52955aeb833a14ba
              ide->command = val;
  
              ide->tf->error = 0;
-@@ -2055,6 +2110,8 @@ ide_read_data(ide_t *ide)
+@@ -2055,6 +2119,8 @@ ide_read_data(ide_t *ide)
                  (ide->command == WIN_READ_MULTIPLE)) {
  
                  ide->tf->secount--;
@@ -960,9 +978,23 @@ index e2ffcab024fd0e8190dd5ad0b4ba11c609cc2347..39e4c3e54b73a8bd52955aeb833a14ba
  
                  if (ide->tf->secount) {
                      ide_next_sector(ide);
-@@ -2566,6 +2623,7 @@ ide_callback(void *priv)
+@@ -2566,6 +2632,7 @@ ide_callback(void *priv)
                  ret = hdd_image_write(ide->hdd_num, ide_get_sector(ide), 1, (uint8_t *) ide->buffer);
                  ide_irq_raise(ide);
+                 ide->tf->secount--;
++                ide_ext_next(ide);
+                 if (ide->tf->secount) {
+                     ide->tf->atastat = DRQ_STAT | DRDY_STAT | DSC_STAT;
+                     ide->tf->pos     = 0;
+@@ -2644,11 +2711,12 @@ ide_callback(void *priv)
+             else {
+                 ret = hdd_image_write(ide->hdd_num, ide_get_sector(ide), 1, (uint8_t *) ide->buffer);
+                 ide->blockcount++;
+-                if (ide->blockcount >= ide->blocksize || ide->tf->secount == 1) {
++                if (ide->blockcount >= ide->blocksize || (ide->tf->secount == 1 && !ide->ext_left)) {
+                     ide->blockcount = 0;
+                     ide_irq_raise(ide);
+                 }
                  ide->tf->secount--;
 +                ide_ext_next(ide);
                  if (ide->tf->secount) {
@@ -996,11 +1028,36 @@ index 7d7d0c1e36cf118b15878c736ed89b5eafe8ee13..0c2d1632521bd82a2722733c894face1
      uint32_t tracks;
      uint32_t spt;
      uint32_t hpc;
+diff --git a/src/include/86box/network.h b/src/include/86box/network.h
+index 0e82a700bf222936cb49a51762f3dba828b34dab..ef407e1c25e3af66d48f8e1efca7c81be2eb17c7 100644
+--- a/src/include/86box/network.h
++++ b/src/include/86box/network.h
+@@ -246,8 +246,9 @@ extern const device_t modem_device;
+ /* PLIP */
+ extern const device_t plip_device;
+ 
+-/* Realtek RTL8139C+ */
++/* Realtek RTL8139C+, RTL8169S */
+ extern const device_t rtl8139c_plus_device;
++extern const device_t rtl8169_device;
+ 
+ /* DEC Tulip */
+ extern const device_t dec_tulip_device;
 diff --git a/src/network/net_rtl8139.c b/src/network/net_rtl8139.c
-index 0daf25a6a30d2e667f9a6c3d921ab279d6562fd3..7f3ae6cf342c71322b29f3dc24cb5382601cb51d 100644
+index 0daf25a6a30d2e667f9a6c3d921ab279d6562fd3..bdf369c55b8d0190452f1c61bdab6fcd968a490a 100644
 --- a/src/network/net_rtl8139.c
 +++ b/src/network/net_rtl8139.c
-@@ -45,10 +45,13 @@
+@@ -6,7 +6,8 @@
+  *
+  *          This file is part of the 86Box distribution.
+  *
+- *          Emulation of Realtek RTL8139C+ NIC.
++ *          Emulation of Realtek RTL8139C+ NIC, and of the RTL8169S gigabit NIC
++ *          (same C+ descriptor rings, PHY through PHYAR).
+  *
+  * Authors: Igor Kovalenko,
+  *          Mark Malakanov,
+@@ -45,10 +46,14 @@
  #include <86box/network.h>
  #include <86box/nmc93cxx.h>
  #include <86box/nvr.h>
@@ -1010,11 +1067,29 @@ index 0daf25a6a30d2e667f9a6c3d921ab279d6562fd3..7f3ae6cf342c71322b29f3dc24cb5382
  #include <86box/bswap.h>
  
 +#define ROM_PATH_RTL8139 "roms/network/rtl8139c/rtl8139c.rom"
++#define ROM_PATH_RTL8169 "roms/network/rtl8169/rtl8169.rom"
 +
  #define PCI_PERIOD 30 /* 30 ns period = 33.333333 Mhz frequency */
  
  #define SET_MASKED(input, mask, curr) \
-@@ -463,6 +466,9 @@ struct RTL8139State {
+@@ -133,6 +138,16 @@ enum RTL8139_registers {
+     TxThresh     = 0xEC, /* Early Tx threshold */
+ };
+ 
++/* RTL8169 registers at offsets the RTL8139 uses for something else */
++enum RTL8169_registers {
++    TxPoll8169 = 0x38,
++    PHYAR      = 0x60, /* PHY access: bit 31 = write (cleared when done) / read done, 20-16 register */
++    PHYstatus  = 0x6C,
++};
++
++/* RTL8169S, XID 008 in TxConfig bits 30-26, 23-20: Linux r8169 "RTL8169s", iPXE realtek */
++#define RTL8169S_TXCONFIG 0x00800000
++
+ enum ClearBitMasks {
+     MultiIntrClear = 0xF000,
+     ChipCmdClear   = 0xE2,
+@@ -463,12 +478,20 @@ struct RTL8139State {
      pc_timer_t timer;
  
      mem_mapping_t bar_mem;
@@ -1024,7 +1099,261 @@ index 0daf25a6a30d2e667f9a6c3d921ab279d6562fd3..7f3ae6cf342c71322b29f3dc24cb5382
  
      /* Support migration to/from old versions */
      int rtl8139_mmio_io_addr_dummy;
-@@ -3099,6 +3105,36 @@ rtl8139_timer(void *priv)
+ 
+     nmc93cxx_eeprom_t *eeprom;
+     uint8_t            eeprom_data[128];
++
++    int      rtl8169;
++    uint32_t phyar;
++    uint16_t phy[32]; /* page 0 of the gigabit PHY; register 31 selects the page */
++    uint16_t RxMaxSize;
+ };
+ 
+ /* Writes tally counters to memory via DMA */
+@@ -510,16 +533,17 @@ rtl8139_transmitter_enabled(RTL8139State *s)
+     return s->bChipCmdState & CmdTxEnb;
+ }
+ 
++/* The RTL8169 only has the C+ descriptor rings. */
+ static int
+ rtl8139_cp_receiver_enabled(RTL8139State *s)
+ {
+-    return s->CpCmd & CPlusRxEnb;
++    return s->rtl8169 || (s->CpCmd & CPlusRxEnb);
+ }
+ 
+ static int
+ rtl8139_cp_transmitter_enabled(RTL8139State *s)
+ {
+-    return s->CpCmd & CPlusTxEnb;
++    return s->rtl8169 || (s->CpCmd & CPlusTxEnb);
+ }
+ 
+ static void
+@@ -832,7 +856,9 @@ rtl8139_do_receive(void *priv, uint8_t *buf, int size_)
+             return size_;
+         }
+ 
+-        uint32_t rx_space = rxdw0 & CP_RX_BUFFER_SIZE_MASK;
++        /* the RTL8169 has a 14-bit length, so its status bits are one higher */
++        uint32_t size_mask = s->rtl8169 ? 0x3fff : CP_RX_BUFFER_SIZE_MASK;
++        uint32_t rx_space  = rxdw0 & size_mask;
+ 
+         /* write VLAN info to descriptor variables. */
+         if (s->CpCmd & CPlusRxVLAN && bswap16(AS_U16(buf[ETH_ALEN * 2])) == 0x8100) {
+@@ -924,14 +950,14 @@ rtl8139_do_receive(void *priv, uint8_t *buf, int size_)
+ 
+         /* set received packet type flags */
+         if (packet_header & RxBroadcast)
+-            rxdw0 |= CP_RX_STATUS_BAR;
++            rxdw0 |= CP_RX_STATUS_BAR << s->rtl8169;
+         if (packet_header & RxMulticast)
+-            rxdw0 |= CP_RX_STATUS_MAR;
++            rxdw0 |= CP_RX_STATUS_MAR << s->rtl8169;
+         if (packet_header & RxPhysical)
+-            rxdw0 |= CP_RX_STATUS_PAM;
++            rxdw0 |= CP_RX_STATUS_PAM << s->rtl8169;
+ 
+         /* set received size */
+-        rxdw0 &= ~CP_RX_BUFFER_SIZE_MASK;
++        rxdw0 &= ~size_mask;
+         rxdw0 |= (size + 4);
+ 
+         /* update ring data */
+@@ -1014,9 +1040,24 @@ rtl8139_reset_rxring(RTL8139State *s, uint32_t bufferSize)
+     s->RxBufAddr    = 0;
+ }
+ 
++static void
++rtl8169_reset_phy(RTL8139State *s)
++{
++    memset(s->phy, 0, sizeof(s->phy));
++    s->phy[0]  = 0x1140; /* autonegotiation, full duplex, 1000 Mbps */
++    s->phy[2]  = 0x001c; /* PHY ID of the RTL8169S/8110S internal PHY (Linux: RTL8211) */
++    s->phy[3]  = 0xc910;
++    s->phy[4]  = 0x01e1; /* advertise 10/100 half and full duplex */
++    s->phy[9]  = 0x0300; /* advertise 1000 half and full duplex */
++    s->phy[15] = 0x3000; /* 1000BASE-T half and full duplex capable */
++}
++
+ static void
+ rtl8139_reset_phy(RTL8139State *s)
+ {
++    if (s->rtl8169)
++        rtl8169_reset_phy(s);
++
+     s->BasicModeStatus = 0x7809;
+     s->BasicModeStatus |= 0x0020; /* autonegotiation completed */
+     /* preserve link state */
+@@ -1063,7 +1104,7 @@ rtl8139_reset(void *priv)
+ //    s->TxConfig |= HW_REVID(1, 0, 0, 0, 0, 0, 0); // RTL-8139  HasHltClk
+     s->clock_enabled = 0;
+ #else
+-    s->TxConfig |= HW_REVID(1, 1, 1, 0, 1, 1, 0); // RTL-8139C+ HasLWake
++    s->TxConfig |= s->rtl8169 ? RTL8169S_TXCONFIG : HW_REVID(1, 1, 1, 0, 1, 1, 0); // RTL-8139C+ HasLWake
+     s->clock_enabled = 1;
+ #endif
+ 
+@@ -1076,7 +1117,7 @@ rtl8139_reset(void *priv)
+     s->Config5 = 0x0;
+ 
+     s->CpCmd         = 0x0; /* reset C+ mode */
+-    s->cplus_enabled = 0;
++    s->cplus_enabled = s->rtl8169;
+ 
+ #if 0
+     s->BasicModeCtrl = 0x2100; // 100Mbps, full duplex
+@@ -1825,7 +1866,7 @@ rtl8139_cplus_transmit_one(RTL8139State *s)
+         s->currCPlusTxDesc = 0;
+     } else {
+         ++s->currCPlusTxDesc;
+-        if (s->currCPlusTxDesc >= 64)
++        if (s->currCPlusTxDesc >= (s->rtl8169 ? 1024 : 64))
+             s->currCPlusTxDesc = 0;
+     }
+ 
+@@ -2471,12 +2512,89 @@ rtl8139_MultiIntr_read(RTL8139State *s)
+     return ret;
+ }
+ 
++static int
++rtl8169_link_up(RTL8139State *s)
++{
++    return !(net_cards_conf[s->nic->card_num].link_state & NET_LINK_DOWN);
++}
++
++/* Gigabit PHY with autonegotiation always complete against a 10/100/1000 full and half duplex partner. */
++static uint16_t
++rtl8169_phy_read(RTL8139State *s, int reg)
++{
++    if (s->phy[31] && reg != 31)
++        return 0; /* vendor pages */
++
++    switch (reg) {
++        case 1:
++            return rtl8169_link_up(s) ? 0x796d : 0x7949; /* link, autonegotiation complete */
++        case 5:
++            return rtl8169_link_up(s) ? 0x41e1 : 0;
++        case 10:
++            return rtl8169_link_up(s) ? 0x3c00 : 0;
++        default:
++            return s->phy[reg];
++    }
++}
++
++static void
++rtl8169_phy_write(RTL8139State *s, int reg, uint16_t val)
++{
++    if (s->phy[31] && reg != 31)
++        return; /* vendor pages */
++
++    if (reg == 0 && (val & 0x8000))
++        rtl8169_reset_phy(s);
++    else if (reg == 0)
++        s->phy[0] = val & ~0x0200; /* autonegotiation restart completes at once */
++    else if (reg != 2 && reg != 3 && reg != 15) /* PHY ID, extended status */
++        s->phy[reg] = val;
++}
++
++/* RTL8169 registers the RTL8139 decodes differently; returns 0 for a register both chips share. */
++static int
++rtl8169_io_write(RTL8139State *s, uint32_t addr, uint32_t val, int len)
++{
++    if (addr == TxPoll8169 && len == 1) {
++        if (val & 0x40) /* normal priority queue */
++            rtl8139_cplus_transmit(s);
++    } else if (addr == PHYAR && len == 4) {
++        int reg = (val >> 16) & 0x1f;
++
++        if (val & 0x80000000) {
++            rtl8169_phy_write(s, reg, val);
++            s->phyar = val & 0x7fffffff;
++        } else
++            s->phyar = 0x80000000 | (reg << 16) | rtl8169_phy_read(s, reg);
++    } else if (addr == RxMaxSize && len == 2)
++        s->RxMaxSize = val;
++    else
++        return 0;
++    return 1;
++}
++
++static int
++rtl8169_io_read(RTL8139State *s, uint32_t addr, int len, uint32_t *val)
++{
++    if (addr == PHYAR && len == 4)
++        *val = s->phyar;
++    else if (addr == PHYstatus && len == 1)
++        *val = rtl8169_link_up(s) ? 0x13 : 0; /* 1000 Mbps full duplex, link */
++    else if (addr == RxMaxSize && len == 2)
++        *val = s->RxMaxSize;
++    else
++        return 0;
++    return 1;
++}
++
+ static void
+ rtl8139_io_writeb(uint32_t addr, uint8_t val, void *priv)
+ {
+     RTL8139State *s = priv;
+ 
+     addr &= 0xFF;
++    if (s->rtl8169 && rtl8169_io_write(s, addr, val, 1))
++        return;
+     switch (addr) {
+         case MAC0 ... MAC0 + 4:
+             s->phys[addr - MAC0] = val;
+@@ -2567,6 +2685,8 @@ rtl8139_io_writew(uint32_t addr, uint16_t val, void *priv)
+     RTL8139State *s = priv;
+ 
+     addr &= 0xFF;
++    if (s->rtl8169 && rtl8169_io_write(s, addr, val, 2))
++        return;
+     switch (addr) {
+         case IntrMask:
+             rtl8139_IntrMask_write(s, val);
+@@ -2628,6 +2748,8 @@ rtl8139_io_writel(uint32_t addr, uint32_t val, void *priv)
+     RTL8139State *s = priv;
+ 
+     addr &= 0xFF;
++    if (s->rtl8169 && rtl8169_io_write(s, addr, val, 4))
++        return;
+     switch (addr) {
+         case RxMissed:
+             rtl8139_log("RxMissed clearing on write\n");
+@@ -2695,8 +2817,11 @@ rtl8139_io_readb(uint32_t addr, void *priv)
+ {
+     RTL8139State *s = priv;
+     uint8_t       ret;
++    uint32_t      val;
+ 
+     addr &= 0xFF;
++    if (s->rtl8169 && rtl8169_io_read(s, addr, 1, &val))
++        return val;
+     switch (addr) {
+         case MAC0 ... MAC0 + 5:
+             ret = s->phys[addr - MAC0];
+@@ -2780,8 +2905,11 @@ rtl8139_io_readw(uint32_t addr, void *priv)
+ {
+     RTL8139State *s = priv;
+     uint16_t      ret;
++    uint32_t      val;
+ 
+     addr &= 0xFF;
++    if (s->rtl8169 && rtl8169_io_read(s, addr, 2, &val))
++        return val;
+     switch (addr) {
+         case TxAddr0 ... TxAddr0 + 4 * 4 - 1:
+             ret = rtl8139_TxStatus_TxAddr_read(s, s->TxAddr, TxAddr0, addr, 2);
+@@ -2861,6 +2989,8 @@ rtl8139_io_readl(uint32_t addr, void *priv)
+     uint32_t      ret;
+ 
+     addr &= 0xFF;
++    if (s->rtl8169 && rtl8169_io_read(s, addr, 4, &ret))
++        return ret;
+     switch (addr) {
+         case RxMissed:
+             ret = s->RxMissed;
+@@ -3099,6 +3229,36 @@ rtl8139_timer(void *priv)
      }
  }
  
@@ -1061,8 +1390,21 @@ index 0daf25a6a30d2e667f9a6c3d921ab279d6562fd3..7f3ae6cf342c71322b29f3dc24cb5382
  static uint8_t
  rtl8139_pci_read(UNUSED(int func), int addr, UNUSED(int len), void *priv)
  {
-@@ -3149,6 +3185,8 @@ rtl8139_pci_read(UNUSED(int func), int addr, UNUSED(int len), void *priv)
-             return 0x39;
+@@ -3112,7 +3272,7 @@ rtl8139_pci_read(UNUSED(int func), int addr, UNUSED(int len), void *priv)
+         case 0x01:
+             return 0x10;
+         case 0x02:
+-            return 0x39;
++            return s->rtl8169 ? 0x69 : 0x39;
+         case 0x03:
+             return 0x81;
+         case 0x07:
+@@ -3146,9 +3306,11 @@ rtl8139_pci_read(UNUSED(int func), int addr, UNUSED(int len), void *priv)
+         case 0x2d:
+             return 0x10;
+         case 0x2e:
+-            return 0x39;
++            return s->rtl8169 ? 0x69 : 0x39;
          case 0x2f:
              return 0x81;
 +        case 0x30 ... 0x33:
@@ -1070,7 +1412,7 @@ index 0daf25a6a30d2e667f9a6c3d921ab279d6562fd3..7f3ae6cf342c71322b29f3dc24cb5382
          case 0x34:
              return 0xdc;
          case 0x3d:
-@@ -3163,7 +3201,6 @@ rtl8139_pci_write(UNUSED(int func), int addr, UNUSED(int len), uint8_t val, void
+@@ -3163,7 +3325,6 @@ rtl8139_pci_write(UNUSED(int func), int addr, UNUSED(int len), uint8_t val, void
  
      switch (addr) {
          case 0x04:
@@ -1078,7 +1420,7 @@ index 0daf25a6a30d2e667f9a6c3d921ab279d6562fd3..7f3ae6cf342c71322b29f3dc24cb5382
              io_removehandler((s->pci_conf[0x11] << 8), 256,
                               rtl8139_io_readb_ioport, rtl8139_io_readw_ioport, rtl8139_io_readl_ioport,
                               rtl8139_io_writeb_ioport, rtl8139_io_writew_ioport, rtl8139_io_writel_ioport,
-@@ -3174,8 +3211,9 @@ rtl8139_pci_write(UNUSED(int func), int addr, UNUSED(int len), uint8_t val, void
+@@ -3174,8 +3335,9 @@ rtl8139_pci_write(UNUSED(int func), int addr, UNUSED(int len), uint8_t val, void
                                rtl8139_io_readb_ioport, rtl8139_io_readw_ioport, rtl8139_io_readl_ioport,
                                rtl8139_io_writeb_ioport, rtl8139_io_writew_ioport, rtl8139_io_writel_ioport,
                                priv);
@@ -1090,7 +1432,7 @@ index 0daf25a6a30d2e667f9a6c3d921ab279d6562fd3..7f3ae6cf342c71322b29f3dc24cb5382
              break;
          case 0x05:
              s->pci_conf[addr & 0xFF] = val & 1;
-@@ -3213,14 +3251,13 @@ rtl8139_pci_write(UNUSED(int func), int addr, UNUSED(int len), uint8_t val, void
+@@ -3213,14 +3375,13 @@ rtl8139_pci_write(UNUSED(int func), int addr, UNUSED(int len), uint8_t val, void
              s->mem_base &= 0xfffff000;
  #endif
              rtl8139_log("New memory base: %08X\n", s->mem_base);
@@ -1112,29 +1454,56 @@ index 0daf25a6a30d2e667f9a6c3d921ab279d6562fd3..7f3ae6cf342c71322b29f3dc24cb5382
              break;
          case 0x3c:
              s->pci_conf[addr & 0xFF] = val;
-@@ -3292,6 +3329,21 @@ nic_init(const device_t *info)
+@@ -3232,6 +3393,7 @@ static void *
+ nic_init(const device_t *info)
+ {
+     RTL8139State *s                     = calloc(1, sizeof(RTL8139State));
++    const char   *rom_path              = info->local ? ROM_PATH_RTL8169 : ROM_PATH_RTL8139;
+     nmc93cxx_eeprom_params_t params;
+     char          eeprom_filename[1024] = { 0 };
+     char          filename[1024] = { 0 };
+@@ -3244,7 +3406,8 @@ nic_init(const device_t *info)
+                     rtl8139_io_writeb_mem, rtl8139_io_writew_mem, rtl8139_io_writel_mem,
+                     NULL, MEM_MAPPING_EXTERNAL, s);
+     pci_add_card(PCI_ADD_NORMAL, rtl8139_pci_read, rtl8139_pci_write, s, &s->pci_slot);
+-    s->inst = device_get_instance();
++    s->inst    = device_get_instance();
++    s->rtl8169 = info->local;
+ 
+     snprintf(eeprom_filename, sizeof(eeprom_filename), "eeprom_rtl8139c_plus_%d.nvr", s->inst);
+ 
+@@ -3255,7 +3418,7 @@ nic_init(const device_t *info)
+ 
+     /* PCI vendor and device ID should be mirrored here */
+     eep_data[1] = 0x10EC;
+-    eep_data[2] = 0x8139;
++    eep_data[2] = s->rtl8169 ? 0x8169 : 0x8139;
+ 
+     /* XXX: Get proper MAC addresses from real EEPROM dumps. OID is generic Realtek */
+     eep_data[7] = 0xe000;
+@@ -3292,6 +3455,21 @@ nic_init(const device_t *info)
      snprintf(filename, sizeof(filename), "nmc93cxx_eeprom_%s_%d.nvr", info->internal_name, s->inst);
      s->eeprom = device_add_inst_params(&nmc93cxx_device, s->inst, &params);
  
 +    if (device_get_config_int("bios")) {
-+        FILE *fp = rom_fopen(ROM_PATH_RTL8139, "rb");
++        FILE *fp = rom_fopen(rom_path, "rb");
 +        if (fp) {
 +            fseek(fp, 0, SEEK_END);
 +            long len = ftell(fp);
 +            fclose(fp);
 +            for (s->boot_rom_size = 0x2000; s->boot_rom_size < len && s->boot_rom_size < 0x20000;)
 +                s->boot_rom_size <<= 1;
-+            rom_init(&s->boot_rom, ROM_PATH_RTL8139, 0, s->boot_rom_size, s->boot_rom_size - 1, 0,
++            rom_init(&s->boot_rom, rom_path, 0, s->boot_rom_size, s->boot_rom_size - 1, 0,
 +                     MEM_MAPPING_EXTERNAL);
 +            mem_mapping_disable(&s->boot_rom.mapping);
 +        } else
-+            pclog("RTL8139: boot ROM %s not found\n", ROM_PATH_RTL8139);
++            pclog("%s: boot ROM %s not found\n", info->name, rom_path);
 +    }
 +
      s->nic = network_attach(s, (uint8_t *) &s->phys[MAC0], rtl8139_do_receive, rtl8139_set_link_status);
      timer_add(&s->timer, rtl8139_timer, s, 0);
      timer_on_auto(&s->timer, 1000000.0 / cpu_pci_speed);
-@@ -3322,6 +3374,17 @@ static const device_config_t rtl8139c_config[] = {
+@@ -3322,6 +3500,43 @@ static const device_config_t rtl8139c_config[] = {
          .selection      = { { 0 } },
          .bios           = { { 0 } }
      },
@@ -1149,9 +1518,53 @@ index 0daf25a6a30d2e667f9a6c3d921ab279d6562fd3..7f3ae6cf342c71322b29f3dc24cb5382
 +        .selection      = { { 0 } },
 +        .bios           = { { 0 } }
 +    },
++    { .name = "", .description = "", .type = CONFIG_END }
++};
++
++static const device_config_t rtl8169_config[] = {
++    {
++        .name           = "mac",
++        .description    = "MAC Address",
++        .type           = CONFIG_MAC,
++        .default_string = NULL,
++        .default_int    = -1,
++        .file_filter    = NULL,
++        .spinner        = { 0 },
++        .selection      = { { 0 } },
++        .bios           = { { 0 } }
++    },
++    {
++        .name           = "bios",
++        .description    = "Boot ROM (" ROM_PATH_RTL8169 ")",
++        .type           = CONFIG_BINARY,
++        .default_string = NULL,
++        .default_int    = 0,
++        .file_filter    = NULL,
++        .spinner        = { 0 },
++        .selection      = { { 0 } },
++        .bios           = { { 0 } }
++    },
      { .name = "", .description = "", .type = CONFIG_END }
  };
  // clang-format on
+@@ -3339,3 +3554,17 @@ const device_t rtl8139c_plus_device = {
+     .force_redraw  = NULL,
+     .config        = rtl8139c_config
+ };
++
++const device_t rtl8169_device = {
++    .name          = "Realtek RTL8169S",
++    .internal_name = "rtl8169",
++    .flags         = DEVICE_PCI,
++    .local         = 1,
++    .init          = nic_init,
++    .close         = nic_close,
++    .reset         = rtl8139_reset,
++    .available     = NULL,
++    .speed_changed = NULL,
++    .force_redraw  = NULL,
++    .config        = rtl8169_config
++};
 diff --git a/src/network/net_slirp.c b/src/network/net_slirp.c
 index d40505bf06d2032c6794448ad9ad52a1b92f32ee..4dd25930819cefbe57375fe6e99e8671b5740ac4 100644
 --- a/src/network/net_slirp.c
@@ -1167,6 +1580,18 @@ index d40505bf06d2032c6794448ad9ad52a1b92f32ee..4dd25930819cefbe57375fe6e99e8671
          .vdhcp_start           = dhcp,
          .vnameserver           = dns,
          .vnameserver6          = { .s6_addr = { 0xfe, 0xc0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x03 } }, /* fec0::3 - unused */
+diff --git a/src/network/network.c b/src/network/network.c
+index da506deecd6039dbe0849b78a416c2a601078062..a7200b19a5f519d0b8313044d2d1eee766827984 100644
+--- a/src/network/network.c
++++ b/src/network/network.c
+@@ -123,6 +123,7 @@ static const NETWORK_CARD net_cards[] = {
+     { &dec_tulip_device           },
+     { &rtl8029as_device           },
+     { &rtl8139c_plus_device       },
++    { &rtl8169_device             },
+     { &smc_epic100_device         },
+     { NULL                        }
+     // clang-format on
 diff --git a/src/testctl.c b/src/testctl.c
 new file mode 100644
 index 0000000000000000000000000000000000000000..8a545c7a0ac1c16836f3fbc2b14e6c374125c40e

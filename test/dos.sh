@@ -1,6 +1,7 @@
 #!/bin/bash
 # DOS: FreeDOS 1.3 boots from the IDE disk (INT 13h/10h/16h/1Ah) and loads HIMEMX (XMS via INT 15h);
-# the shared RAM of a WD8013 ISA network card at D0000 is reachable.
+# the shared RAM of a WD8013 ISA network card at D0000 is reachable. POST screen: board name, release
+# date, drive detection lines.
 . "$(dirname "$0")/lib.sh"
 mkdir -p "$vm_dir"
 nasm -f bin -o "$vm_dir/shmem.com" "$nb/test/dos/shmem.asm"
@@ -11,6 +12,12 @@ vm_start dos "$rom" "$(disk_cfg "$vm_dir/hdd.img")
 net_01_card = wd8013ebt
 net_01_net_type = slirp
 net_01_link = 0"
+vm_wait_text "Detecting HDD Primary Master +\.\.\. 86B_HD" 30   # POST screen: board, release date, drives
+vm_expect "^Biostar MB-8433UUD-A"
+vm_expect "^[0-3][0-9]/[01][0-9]/20[0-9]{2} "
+vm_expect "Detecting HDD Primary Slave +\.\.\. None"
+vm_expect "^rel-[^ ]*-[0-9]{8}_[0-9]{6} "             # SeaBIOS version and build time, nothing after
+vm_end_of_post
 vm_wait_text "DOS-TEST-OK" 90
 expect_bits "$(vm_cr0)" 0x60000000 0 "L1 cache enabled in DOS (CR0.CD, NW)"
 # Auto Configuration: the original BIOS's values on this 33 MHz bus (test/oracle baseline)

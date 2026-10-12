@@ -78,6 +78,8 @@ Ten of the eleven files below end up in the ROM. `cpu/486/exit_car.S` is built b
   - The 16 bytes at 0xFFFFFFF0 hold one hand-encoded `jmp rel16` to `_start16bit`.
 - **`cpu/486/entry16.S`** (bootblock, `.init._start`)
   - Saves the BIST result (EAX at reset) in EBP.
+  - Keeps the CPU signature in DX at reset (family and model, bits 11-4) in CMOS 7Fh: the clock
+    multiplier and name of CPUs without CPUID (coreboot ramstage, SeaBIOS).
   - Sends POST code 01h to port 80h.
   - Flushes the TLB (`mov cr3`) and L1 (`invd`).
   - Runs the soft-reset check of §2.
@@ -110,7 +112,7 @@ Ten of the eleven files below end up in the ROM. `cpu/486/exit_car.S` is built b
   - Reads 2 MiB (see §7).
   - Sets UM8881 register 50h bit 6, the L2 write-back mode.
   - Switches to its own stack and calls `main()` (`arch/486/postcar.c`).
-  - Sends POST codes 3Ch and 3Dh; in the debug ROM only, raw register dumps to COM1 (§7).
+  - Sends POST codes 3Ch and 3Dh.
 - **`cpu/486/exit_car.S`** (postcar)
   - `chipset_teardown_car()`. Its only call, in `arch/486/exit_car.S`, is commented out.
   - `postcar.map` lists it under "Discarded input sections", so it is **not in the ROM**.
@@ -287,7 +289,7 @@ SeaBIOS:
   - `arch/486/exit_car.S` sends 44 raw bytes: `{`/CR pairs, EIP, ESP, the return address, `_cbmem_top_ptr`, CR0 twice, `34567`, `X` 0C 0B 0A.
   - The `post_code` characters of §3 come on top, because `CONFIG_POST_IO=y`.
   - All of this goes to COM1 even though the release ROM disables the coreboot serial console.
-  - **Fixed:** the POST codes go to port 80h, and the raw dumps are built only with `CONFIG_CONSOLE_SERIAL` (debug ROM); the release ROM sends nothing to COM1.
+  - **Fixed:** the POST codes go to port 80h, and the raw dumps are removed; the release ROM sends nothing to COM1, the debug ROM only text logs.
 - **Dead code and data in the ROM.**
   - `chipset_teardown_car` (`cpu/486/exit_car.S`) is built but discarded.
   - The unused `__gdtptr` (4 bytes) and `pagetables_name` (11 bytes) are in the bootblock.

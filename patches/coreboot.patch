@@ -50,6 +50,21 @@ index 7f4cd5d34f0ce4791304e4b6fe37470e67d2d392..b96c258b62f928186d51dec0c1697b8d
  	call	car_stage_entry
  
  	/* Expect to never return. */
+diff --git a/src/arch/486/boot.c b/src/arch/486/boot.c
+index d31732361df831a8fee323cc1da770ffa1f6d641..fe5aff20efa9c6722ed657a9d7f7fd4d84ff7430 100644
+--- a/src/arch/486/boot.c
++++ b/src/arch/486/boot.c
+@@ -69,10 +69,6 @@ void arch_prog_run(struct prog *prog)
+ 
+ 	doit = prog_entry(prog);
+ 
+-	printk(BIOS_DEBUG, "DOIT prog:%p doit:%p arg %p\n",
+-		prog, doit, prog_entry_arg(prog)
+-	);
+-
+ 	doit(prog_entry_arg(prog));
+ #endif
+ }
 diff --git a/src/arch/486/bootblock.ld b/src/arch/486/bootblock.ld
 index 1126c84b9b15c6e492d96ad0f85e84f0eaab1150..b2df67a25aea22f1aa3f5b29f6e63c19e262a56e 100644
 --- a/src/arch/486/bootblock.ld
@@ -227,7 +242,7 @@ index 2c686a745f572771cf44c7a4ae8e274009c4378c..194fa55c27d2e70cc78961bd141c3758
  #if CONFIG(NORTHBRIDGE_ALI_M1489)
  . = 0x000fff00;
 diff --git a/src/arch/486/exit_car.S b/src/arch/486/exit_car.S
-index 7874c1321f0c41e38ee6bc7830de6c98af66296c..ef99afd4e39e38864476ef99abb008bff0893af7 100644
+index 7874c1321f0c41e38ee6bc7830de6c98af66296c..ce6436cd6704454a0106308bfbfcfc08d2affa98 100644
 --- a/src/arch/486/exit_car.S
 +++ b/src/arch/486/exit_car.S
 @@ -2,9 +2,25 @@
@@ -256,27 +271,22 @@ index 7874c1321f0c41e38ee6bc7830de6c98af66296c..ef99afd4e39e38864476ef99abb008bf
  
  
  #define UMC_PCI_BDFR(BUS, DEV, FN, REG) ( \
-@@ -16,6 +32,9 @@
+@@ -16,13 +32,7 @@
  )
  
  
-+/* send_uart: write AL to COM1 and wait until sent, in the debug ROM only (the flash ROM keeps
-+ * COM1 silent). pci_write/pci_read: PCI configuration byte access, see cpu/486/cache_as_ram.S. */
-+#if CONFIG(CONSOLE_SERIAL)
- #define send_uart		\
- 	movw	$0x3f8, %dx;	\
- 	outb	%al, %dx;	\
-@@ -23,6 +42,9 @@
- 	inb	%dx, %al;	\
- 	testb	$0x20, %al;	\
- 	jz	1b
-+#else
-+#define send_uart
-+#endif
+-#define send_uart		\
+-	movw	$0x3f8, %dx;	\
+-	outb	%al, %dx;	\
+-1:	movw	$0x3fd, %dx;	\
+-	inb	%dx, %al;	\
+-	testb	$0x20, %al;	\
+-	jz	1b
++/* pci_write/pci_read: PCI configuration byte access, see cpu/486/cache_as_ram.S. */
  
  
  #define pci_write(BDFR, REG_IMM)	\
-@@ -55,6 +77,7 @@
+@@ -55,6 +65,7 @@
  .global _estack
  .global _stack_size
  
@@ -284,7 +294,7 @@ index 7874c1321f0c41e38ee6bc7830de6c98af66296c..ef99afd4e39e38864476ef99abb008bf
  _stack:
  .space CONFIG_STACK_SIZE
  _estack:
-@@ -66,13 +89,17 @@ _start:
+@@ -66,104 +77,32 @@ _start:
  	/* Assume stack alignment doesn't matter here as chipset_teardown_car
  	   is expected to be implemented in assembly. */
  
@@ -298,11 +308,21 @@ index 7874c1321f0c41e38ee6bc7830de6c98af66296c..ef99afd4e39e38864476ef99abb008bf
  	call	gdt_init
  #endif
  
-+	/* Debug, always built: "{" CR three times on COM1. */
- 	mov	$'{', %al
- 	send_uart
- 	mov	$0xd, %al
-@@ -91,11 +118,17 @@ _start:
+-	mov	$'{', %al
+-	send_uart
+-	mov	$0xd, %al
+-	send_uart
+-	mov	$'{', %al
+-	send_uart
+-	mov	$0xd, %al
+-	send_uart
+-	mov	$'{', %al
+-	send_uart
+-	mov	$0xd, %al
+-	send_uart
+ 
+ #if ENV_X86_64
+ 	mov	%rdi, %rax
  	movabs %rax, _cbmem_top_ptr
  #else
  	/* The return argument is at 0(%esp), the calling argument at 4(%esp) */
@@ -313,31 +333,131 @@ index 7874c1321f0c41e38ee6bc7830de6c98af66296c..ef99afd4e39e38864476ef99abb008bf
  #endif
  
  
-+	/* Debug, always built (#if 1): sends raw little-endian dwords to
-+	 * COM1: the current EIP (call/pop trick), ESP, the return address at
-+	 * (%esp), _cbmem_top_ptr, then CR0 and CR0 & ~(CD|NW), each followed
-+	 * by a CR (0x0d). send_uart clobbers EAX and DX only. */
- #if 1
- 	call	1f
- 1:
-@@ -164,6 +197,8 @@ _start:
- 
- #endif
+-#if 1
+-	call	1f
+-1:
+-	pop	%eax
+-	send_uart
+-	shr $0x8, %eax
+-	send_uart
+-	shr $0x8, %eax
+-	send_uart
+-	shr $0x8, %eax
+-	send_uart
+-
+-
+-	# # 01000000 = _cbmem_top_ptr
+-	# send_uart
+-	# shr	$0x8, %eax
+-	# send_uart
+-	# shr	$0x8, %eax
+-	# send_uart
+-	# shr	$0x8, %eax
+-	# send_uart
+- #
+- #
+-	# mov	$0xd, %al	//pc2005
+-	# send_uart
+-
+-	# 04560f7c
+-	mov	%esp, %eax
+-	send_uart
+-	shr	$0x8, %eax
+-	send_uart
+-	shr	$0x8, %eax
+-	send_uart
+-	shr	$0x8, %eax
+-	send_uart
+-
+-	mov	$0xd, %al	//pc2005
+-	send_uart
+-
+-	# [esp] = 000e05dc
+-	mov	(%esp), %eax
+-	send_uart
+-	shr	$0x8, %eax
+-	send_uart
+-	shr	$0x8, %eax
+-	send_uart
+-	shr	$0x8, %eax
+-	send_uart
+-
+-	mov	$0xd, %al	//pc2005
+-	send_uart
+-
+-
+-	# 01000000
+-	mov	_cbmem_top_ptr, %eax
+-	send_uart
+-	shr	$0x8, %eax
+-	send_uart
+-	shr	$0x8, %eax
+-	send_uart
+-	shr	$0x8, %eax
+-	send_uart
+-
+-	mov	$0xd, %al	//pc2005
+-	send_uart
+-
+-#endif
  
 +/* Disabled: clflush does not exist on a 486 (and is not needed: with
 + * CD = NW = 1 the write above already went to DRAM). */
  #if 0	//no cflush on 486 // TODO macro?
  	/* Make sure _cbmem_top_ptr hits dram before invd */
  	movl	$1, %eax
-@@ -226,6 +261,7 @@ skip_clflush:
+@@ -185,37 +124,6 @@ _start:
+ 	# movl	%eax, %tr5
+ 
+ 
+-#if 1
+-	# CR0 val = 60000011 cd+nw
+-	movl	%cr0, %eax
+-
+-	send_uart
+-	shr	$0x8, %eax
+-	send_uart
+-	shr	$0x8, %eax
+-	send_uart
+-	shr	$0x8, %eax
+-	send_uart
+-
+-	mov	$0xd, %al	//pc2005
+-	send_uart
+-
+-	mov	%cr0, %eax
+-	andl	$(~(CR0_CD | CR0_NW)), %eax
+-
+-
+-	send_uart
+-	shr	$0x8, %eax
+-	send_uart
+-	shr	$0x8, %eax
+-	send_uart
+-	shr	$0x8, %eax
+-	send_uart
+-
+-	mov	$0xd, %al	//pc2005
+-	send_uart
+-
+-#endif
+ 
+ 
+ skip_clflush:
+@@ -226,19 +134,14 @@ skip_clflush:
  
  	# invd
  
-+	/* Debug, always built: "34567" on COM1. */
- 	mov	$0x33, %al	//pc2005
- 	send_uart
- 	mov	$0x34, %al	//pc2005
-@@ -239,6 +275,11 @@ skip_clflush:
+-	mov	$0x33, %al	//pc2005
+-	send_uart
+-	mov	$0x34, %al	//pc2005
+-	send_uart
+-	mov	$0x35, %al	//pc2005
+-	send_uart
+-	mov	$0x36, %al	//pc2005
+-	send_uart
+-	mov	$0x37, %al	//pc2005
+-	send_uart
  
  
  	//fill L2 cache, twice as size?
@@ -349,7 +469,7 @@ index 7874c1321f0c41e38ee6bc7830de6c98af66296c..ef99afd4e39e38864476ef99abb008bf
  	movl	$0x200000, %edi
  	movl	$0x300000, %ecx
  	sub	%edi, %ecx
-@@ -250,9 +291,14 @@ skip_clflush:
+@@ -250,9 +153,14 @@ skip_clflush:
  	xor	%eax, %eax
  	rep	stosl	/* DF=0, up */
  
@@ -364,7 +484,7 @@ index 7874c1321f0c41e38ee6bc7830de6c98af66296c..ef99afd4e39e38864476ef99abb008bf
  #if ENV_X86_64
  	mov	%cr0, %rax
  	and     $(~(CR0_CD | CR0_NW)), %eax
-@@ -270,9 +316,12 @@ skip_clflush:
+@@ -270,9 +178,12 @@ skip_clflush:
  	invd
  	# invd
  
@@ -379,7 +499,7 @@ index 7874c1321f0c41e38ee6bc7830de6c98af66296c..ef99afd4e39e38864476ef99abb008bf
  	shr	$2, %ecx
  	cld
  
-@@ -292,6 +341,9 @@ skip_clflush:
+@@ -292,6 +203,9 @@ skip_clflush:
  #endif
  
  	//TODO switch to writeback? (any time probably)
@@ -389,15 +509,75 @@ index 7874c1321f0c41e38ee6bc7830de6c98af66296c..ef99afd4e39e38864476ef99abb008bf
  #if 1
  	pci_read(UMC_PCI_BDFR(0, 0x10, 0, 0x50))
  	movb	%al, %cl
-@@ -299,6 +351,7 @@ skip_clflush:
+@@ -299,74 +213,11 @@ skip_clflush:
  	pci_write(UMC_PCI_BDFR(0, 0x10, 0, 0x50), %cl)
  #endif
  
-+	/* Debug, always built: 'X' 0x0c 0x0b 0x0a on COM1. */
- 	mov	$'X', %al	//pc2005
- 	send_uart
- 	mov	$0xc, %al	//pc2005
-@@ -367,6 +420,7 @@ test:
+-	mov	$'X', %al	//pc2005
+-	send_uart
+-	mov	$0xc, %al	//pc2005
+-	send_uart
+-	mov	$0xb, %al	//pc2005
+-	send_uart
+-	mov	$0xa, %al	//pc2005
+-	send_uart
+ 
+-#if 0
+-	# //01ff21a5
+-	mov	%esp, %eax
+-	send_uart
+-	shr	$0x8, %eax
+-	send_uart
+-	shr	$0x8, %eax
+-	send_uart
+-	shr	$0x8, %eax
+-	send_uart
+-
+-	mov	$0xd, %al	//pc2005
+-	send_uart
+-
+-	call	test
+-test:
+-	pop	%eax
+-	send_uart
+-	shr $0x8, %eax
+-	send_uart
+-	shr $0x8, %eax
+-	send_uart
+-	shr $0x8, %eax
+-	send_uart
+-
+-
+-	mov	$0xa, %al	//pc2005
+-	send_uart
+-
+-
+-	# 02000000
+-	mov	_cbmem_top_ptr, %eax
+-	send_uart
+-	shr	$0x8, %eax
+-	send_uart
+-	shr	$0x8, %eax
+-	send_uart
+-	shr	$0x8, %eax
+-	send_uart
+-
+-	mov	$0xd, %al	//pc2005
+-	send_uart
+-
+-	# 01ff21a5
+-	mov	%esp, %eax
+-	send_uart
+-	shr	$0x8, %eax
+-	send_uart
+-	shr	$0x8, %eax
+-	send_uart
+-	shr	$0x8, %eax
+-	send_uart
+-
+-	mov	$0xd, %al	//pc2005
+-	send_uart
+-#endif
  
  	//NOTICE all levels of memory should be coherent by now
  
@@ -405,9 +585,65 @@ index 7874c1321f0c41e38ee6bc7830de6c98af66296c..ef99afd4e39e38864476ef99abb008bf
  	movl	$_estack, %esp
  	/* Align stack to 16 bytes at call instruction. */
  	andl	$0xfffffff0, %esp
-@@ -431,6 +485,7 @@ test:
- #endif
+@@ -375,62 +226,8 @@ test:
+ 	   call into main directly from chipset_teardown_car. */
+ 	/* call	postcar_mtrr_setup */
  
+-#if 0
+-	# 01ff9410
+-	mov	%esp, %eax
+-	send_uart
+-	shr	$0x8, %eax
+-	send_uart
+-	shr	$0x8, %eax
+-	send_uart
+-	shr	$0x8, %eax
+-	send_uart
+-
+-	mov	$0xd, %al	//pc2005
+-	send_uart
+-#endif
+-
+-#if 0
+-	//quick search debug block
+-	nop
+-	nop
+-	nop
+-	nop
+-	nop
+-	nop
+-	nop
+-	rdtsc
+-#endif
+-
+-#if 0
+-
+-	# 01ff93d0
+-	mov	%esp, %eax
+-	send_uart
+-	shr	$0x8, %eax
+-	send_uart
+-	shr	$0x8, %eax
+-	send_uart
+-	shr	$0x8, %eax
+-	send_uart
+-
+-	mov	$0xd, %al	//pc2005
+-	send_uart
+-	mov	$0xa, %al	//pc2005
+-	send_uart
+-
+-	# 01ff93d0
+-	mov	%esp, %eax
+-	send_uart
+-	shr	$0x8, %eax
+-	send_uart
+-	shr	$0x8, %eax
+-	send_uart
+-	shr	$0x8, %eax
+-	send_uart
+-#endif
+-
  	/* Call into main for postcar. */
 +	/* (arch/486/postcar.c: console, cbmem, then run_ramstage()) */
  	call	main
@@ -602,6 +838,60 @@ index 9b2da4e228a5c91726c50187df44e265f636b6f8..a5acb276cac632d6bffc9d0d51172f49
  
  	pirq_tbl = (struct irq_routing_table *)(addr);
  	num_entries = (pirq_tbl->size - 32) / 16;
+diff --git a/src/arch/486/postcar.c b/src/arch/486/postcar.c
+index f02dfddfa9db10ef78831d8f980913de97ef01b2..1168b4ae536353a30a54f2ce9e8247446bb5e209 100644
+--- a/src/arch/486/postcar.c
++++ b/src/arch/486/postcar.c
+@@ -20,7 +20,6 @@ void main(void)
+ 
+ 	console_init();
+ 
+-printk(BIOS_DEBUG, "=+=+=+=+ postcar main %p\n", main);
+ 
+ 	/*
+ 	 * CBMEM needs to be recovered because timestamps rely on
+diff --git a/src/arch/486/postcar_loader.c b/src/arch/486/postcar_loader.c
+index f6e0a5c90a6d68c07c70df01efe0f515bbfbb5b8..65690b56e30c4a62442fafdbd0073f980ccc226c 100644
+--- a/src/arch/486/postcar_loader.c
++++ b/src/arch/486/postcar_loader.c
+@@ -36,17 +36,12 @@ static void load_postcar_cbfs(struct prog *prog)
+ 		.prog = prog,
+ 	};
+ 
+-	printk(BIOS_NOTICE, "load_postcar_cbfs {\n");
+-
+ 	if (rmodule_stage_load(&rsl))
+ 		die_with_post_code(POST_INVALID_ROM,
+ 				   "Failed to load after CAR program.\n");
+ 
+-	printk(BIOS_NOTICE, "S2\n");
+-
+ 	stage_cache_add(STAGE_POSTCAR, prog);
+ 
+-	printk(BIOS_NOTICE, "load_postcar_cbfs }\n");
+ 
+ 
+ #if 0
+diff --git a/src/commonlib/region.c b/src/commonlib/region.c
+index 9811f43a28726705a766e42d35839dbefda63c24..bb3ad8428ceba5d2d5e82c3661e5c78787cc1363 100644
+--- a/src/commonlib/region.c
++++ b/src/commonlib/region.c
+@@ -328,7 +328,6 @@ static ssize_t mdev_readat(const struct region_device *rd, void *b,
+ 
+ 	mdev = container_of(rd, __typeof__(*mdev), rdev);
+ 
+-printk(BIOS_DEBUG, "!!read at %p<-%p n:%u TODO\n", b, &mdev->base[offset], size);
+ 
+ #if ENV_BOOTBLOCK
+ 	uintptr_t dstaddr = (uintptr_t) b;
+@@ -343,7 +342,6 @@ printk(BIOS_DEBUG, "!!read at %p<-%p n:%u TODO\n", b, &mdev->base[offset], size)
+ 		(srcaddr <= 0xffffffff)
+ 	)
+ 	{
+-printk(BIOS_DEBUG, "don't copy from ROM to ROM \n");
+ 		//don't copy from ROM to the same ROM
+ 		return size;
+ 	}
 diff --git a/src/console/Makefile.inc b/src/console/Makefile.inc
 index 4296426a0526bd0891901220f04601e8548b2926..b2093e8d2e5e56f72b41084025306924ba3b779a 100644
 --- a/src/console/Makefile.inc
@@ -625,6 +915,37 @@ index 4296426a0526bd0891901220f04601e8548b2926..b2093e8d2e5e56f72b41084025306924
  romstage-y += post.c
  romstage-y += die.c
  
+diff --git a/src/console/init.c b/src/console/init.c
+index a056ecfd7664b0f25df126ea6dde176d40f9216a..aff0330ca87a48051b80365e3e63110f932ce47b 100644
+--- a/src/console/init.c
++++ b/src/console/init.c
+@@ -58,13 +58,6 @@ void console_init(void)
+ 		pci_early_bridge_init();
+ 
+ 
+-	asm volatile(
+-		"movb $'j', %%al\n\t"     // Move the character to AL register
+-		"movw $0x3F8, %%dx\n\t" // Load 0x3F8 (COM1 port) into DX register
+-		"outb %%al, %%dx"       // Send the character to COM1 port
+-		:::
+-	);
+-
+ 	console_hw_init();
+ 
+ 	console_inited = 1;
+diff --git a/src/console/printk.c b/src/console/printk.c
+index 43d4ca73300d3dc13089a066b356c50512dbcdb6..d8d86500687843fc969e74e008fe17684cc37062 100644
+--- a/src/console/printk.c
++++ b/src/console/printk.c
+@@ -160,7 +160,7 @@ int vprintk(int msg_level, const char *fmt, va_list args)
+ 	return i;
+ }
+ 
+-int printk(int msg_level, const char *fmt, ...)
++int (printk)(int msg_level, const char *fmt, ...)
+ {
+ 	va_list args;
+ 	int i;
 diff --git a/src/cpu/486/bootblock.c b/src/cpu/486/bootblock.c
 index f6f29a6c4ee9107dd0f36510825881f001166462..a03f88247886b86ad2681cf3cde95f892251fbb0 100644
 --- a/src/cpu/486/bootblock.c
@@ -922,10 +1243,10 @@ index 66a1ab6ede38dbedd2b3da1d7bf95ecab91b6369..c4ca32fca3c1c7114db319c0b172342d
  pagetables_name:
  	.string "pagetables"
 diff --git a/src/cpu/486/entry16.S b/src/cpu/486/entry16.S
-index 071693b4aa2c8dc17402689319b595244c6c0161..c667a9af5bb1344cc1fe618da053fb744f9ddc68 100644
+index 071693b4aa2c8dc17402689319b595244c6c0161..2716a6fd57a208c0eff178d9dd5ba593275aacbc 100644
 --- a/src/cpu/486/entry16.S
 +++ b/src/cpu/486/entry16.S
-@@ -27,10 +27,27 @@
+@@ -27,17 +27,24 @@
  /* Start code to put an i386 or later processor into 32-bit protected mode.
   */
  
@@ -947,13 +1268,17 @@ index 071693b4aa2c8dc17402689319b595244c6c0161..c667a9af5bb1344cc1fe618da053fb74
  #include <cpu/486/post_code.h>
  
  
-+/* Debug helper, only used in the disabled (#if 0) block below: send AL to
-+ * COM1 (0x3F8) and wait until the transmit holding register is empty
-+ * (bit 5 of the line status register 0x3FD). */
- #define send_uart		\
- 	movw	$0x3f8, %dx;	\
- 	outb	%al, %dx;	\
-@@ -51,12 +68,19 @@
+-#define send_uart		\
+-	movw	$0x3f8, %dx;	\
+-	outb	%al, %dx;	\
+-1:	movw	$0x3fd, %dx;	\
+-	inb	%dx, %al;	\
+-	testb	$0x20, %al;	\
+-	jz	1b
+ 
+ 
+ 
+@@ -51,12 +58,34 @@
  .type _start16bit, @function
  
  _start16bit:
@@ -965,6 +1290,21 @@ index 071693b4aa2c8dc17402689319b595244c6c0161..c667a9af5bb1344cc1fe618da053fb74
 +	 * used for anything else until entry32.S.) */
  	movl	%eax, %ebp
  
++	/* Keep the CPU signature that DX holds after reset (bits 11-4: family
++	 * and model) in CMOS 7Fh, for the bus clock and the name of CPUs
++	 * without CPUID (newbios_cmos.h NB_CMOS_CPUSIG). Port 70h bit 7 (NMI
++	 * mask) is kept as read. Skipped if DX is 0. */
++	testw	%dx, %dx
++	jz	1f
++	inb	$0x70, %al
++	andb	$0x80, %al
++	orb	$0x7f, %al
++	outb	%al, $0x70
++	movw	%dx, %ax
++	shrw	$4, %ax
++	outb	%al, $0x71
++1:
++
 +	/* With CONFIG_POST_IO each post_code(c) below writes c to port 80h
 +	 * for a POST card (include/cpu/486/post_code.h, newBIOS/POSTCODES.md).
 +	 * post_init is empty (it used to set up COM1 for them). */
@@ -974,7 +1314,7 @@ index 071693b4aa2c8dc17402689319b595244c6c0161..c667a9af5bb1344cc1fe618da053fb74
  
  	/* IMMEDIATELY invalidate the translation lookaside buffer (TLB) before
  	 * executing any further code. Even though paging is disabled we
-@@ -77,17 +101,27 @@ _start16bit:
+@@ -77,17 +106,27 @@ _start16bit:
  	 */
  
  	 //486 is not a modern processor :-D
@@ -1002,7 +1342,7 @@ index 071693b4aa2c8dc17402689319b595244c6c0161..c667a9af5bb1344cc1fe618da053fb74
  	movw	$0xcf8, %dx
  	movl	$0x80008054, %eax	//BDFR: 0:0x10:0
  	outl	%eax, %dx
-@@ -96,9 +130,12 @@ _start16bit:
+@@ -96,9 +135,12 @@ _start16bit:
  	add	%al, %dl
  	inb	%dx, %al
  
@@ -1015,7 +1355,7 @@ index 071693b4aa2c8dc17402689319b595244c6c0161..c667a9af5bb1344cc1fe618da053fb74
  	movw	$0xcf8, %dx
  	movl	$0x80008055, %eax	//BDFR: 0:0x10:0
  	outl	%eax, %dx
-@@ -113,6 +150,9 @@ _start16bit:
+@@ -113,6 +155,9 @@ _start16bit:
  
  #if 1
  	//read register 0xf of RTC
@@ -1025,16 +1365,27 @@ index 071693b4aa2c8dc17402689319b595244c6c0161..c667a9af5bb1344cc1fe618da053fb74
  	inb	$0x70, %al
  	and	$0x80, %al
  	or	$0xf, %al
-@@ -133,7 +173,7 @@ _start16bit:
+@@ -133,18 +178,8 @@ _start16bit:
  	//chipset is configured -> soft reset (CPU only reset)
  	//jump to shadow (seabios or other payload??)
  
 -	post_code(/*POST_RESET_VECTOR_CORRECT*/ 'W')
 +	post_code(POST_486_SOFT_RESET)
  
- #if 0
- 	mov	%cr2, %eax
-@@ -152,6 +192,9 @@ _start16bit:
+-#if 0
+-	mov	%cr2, %eax
+-	send_uart
+-	shr	$0x8, %eax
+-	send_uart
+-	shr	$0x8, %eax
+-	send_uart
+-	shr	$0x8, %eax
+-	send_uart
+-#endif
+ 
+ 
+ 	/* Restore BIST to %eax */
+@@ -152,6 +187,9 @@ _start16bit:
  
  	//TODO restore EDX?
  
@@ -1044,7 +1395,7 @@ index 071693b4aa2c8dc17402689319b595244c6c0161..c667a9af5bb1344cc1fe618da053fb74
  	ljmpl	$0xf000, $0xfff0
  
  no_soft_reset:
-@@ -198,26 +241,47 @@ no_soft_reset:
+@@ -198,45 +236,43 @@ no_soft_reset:
  	 * See IA32 manual Vol 3A 19.26 Interrupts.
  	 */
  
@@ -1081,31 +1432,37 @@ index 071693b4aa2c8dc17402689319b595244c6c0161..c667a9af5bb1344cc1fe618da053fb74
  	orl	$0x60000001, %eax /* CD, NW, PE = 1 */
  	movl	%eax, %cr0
  
-+	/* Now in 16-bit protected mode: CS keeps its hidden real-mode
-+	 * descriptor (base 0xFFFF0000) until the far jump below reloads it. */
-+
- 	//pc2005 test CS
+-	//pc2005 test CS
 -	post_code('A')
 -	post_code('{')
-+	post_code(POST_486_PROTECTED_MODE)
+-
+-	mov	%cs, %bx
+-
+-	movb	%bl, %al
+-	movw	$0x3f8, %dx
+-	outb	%al, %dx
+-1:	movw	$0x3fd, %dx
+-	inb	%dx, %al
+-	testb	$0x20, %al
+-	jz	1b
++	/* Now in 16-bit protected mode: CS keeps its hidden real-mode
++	 * descriptor (base 0xFFFF0000) until the far jump below reloads it. */
  
-+#if CONFIG(CONSOLE_SERIAL)
-+	/* Debug ROM only: the two raw bytes of the CS selector (expected
-+	 * 00 F0) sent to COM1. */
- 	mov	%cs, %bx
- 
- 	movb	%bl, %al
-@@ -235,8 +299,7 @@ no_soft_reset:
- 	inb	%dx, %al
- 	testb	$0x20, %al
- 	jz	1b
+-	movb	%bh, %al
+-	movw	$0x3f8, %dx
+-	outb	%al, %dx
+-1:	movw	$0x3fd, %dx
+-	inb	%dx, %al
+-	testb	$0x20, %al
+-	jz	1b
 -
 -	post_code('}')
-+#endif
++	//pc2005 test CS
++	post_code(POST_486_PROTECTED_MODE)
  
  	/* Restore BIST to %eax */
  	movl	%ebp, %eax
-@@ -250,15 +313,22 @@ no_soft_reset:
+@@ -250,15 +286,22 @@ no_soft_reset:
  
  
  	/* Now that we are in protected mode jump to a 32 bit code segment. */
@@ -1232,8 +1589,33 @@ index 38580146b449a5c40d765d30235b1209ba016eae..feb9277666e15b047363eef04d524487
  	.byte  0xe9
  	.int   _start16bit - ( . + 2 )
  	/* Note: The above jump is hand coded to work around bugs in binutils.
+diff --git a/src/cpu/486/romstage.c b/src/cpu/486/romstage.c
+index 7a95fffee4f19b93233c30ca894e9b79ef03a62d..40d877547992671e4c04f6e9c8c23dcaa2c0b8ba 100644
+--- a/src/cpu/486/romstage.c
++++ b/src/cpu/486/romstage.c
+@@ -59,7 +59,6 @@ void __noreturn romstage_main(void)
+ 		printk(BIOS_DEBUG, "Smashed stack detected in romstage!\n");
+ 	}
+ 
+-	printk(BIOS_DEBUG, "bef prepare postcar\n");
+ 
+ 	// if (CONFIG(SMM_TSEG))
+ 		// smm_list_regions();
+diff --git a/src/device/pci_device.c b/src/device/pci_device.c
+index 88736f8d5b7e26a49280889ae33f356bf7b5827f..8578d91a8d09567c48bea1196e8bebe61ad72739 100644
+--- a/src/device/pci_device.c
++++ b/src/device/pci_device.c
+@@ -1826,8 +1826,6 @@ void pci_assign_irqs(struct device *dev, const unsigned char pIntAtoD[4])
+ {
+ 	u8 slot, line, irq;
+ 
+-printk(BIOS_DEBUG, "AAAAAAIIIIRRRRQQQ\n");
+-
+ 
+ 	/* Each device may contain up to eight functions. */
+ 	slot = dev->path.pci.devfn >> 3;
 diff --git a/src/include/console/console.h b/src/include/console/console.h
-index c69efcde4069f7ffdd7acc944e451801c18bb3a8..fede3fb8acac525c6fb220f03980a9873a54460f 100644
+index c69efcde4069f7ffdd7acc944e451801c18bb3a8..87031cd26f63164c92b975625d6a0553776d48d7 100644
 --- a/src/include/console/console.h
 +++ b/src/include/console/console.h
 @@ -44,7 +44,7 @@ static inline int get_console_loglevel(void)
@@ -1245,6 +1627,16 @@ index c69efcde4069f7ffdd7acc944e451801c18bb3a8..fede3fb8acac525c6fb220f03980a987
  	 ENV_LIBAGESA || (ENV_SMM && CONFIG(DEBUG_SMI)))
  
  #if __CONSOLE_ENABLE__
+@@ -53,6 +53,9 @@ void console_init(void);
+ int console_log_level(int msg_level);
+ 
+ int printk(int msg_level, const char *fmt, ...) __attribute__((format(printf, 2, 3)));
++/* 486: messages above the build log level are compiled out, to save ROM space. */
++#define printk(LEVEL, ...) \
++	((LEVEL) <= CONFIG_DEFAULT_CONSOLE_LOGLEVEL ? printk(LEVEL, __VA_ARGS__) : 0)
+ int vprintk(int msg_level, const char *fmt, va_list args);
+ 
+ void do_putchar(unsigned char byte);
 diff --git a/src/include/cpu/486/newbios_post.h b/src/include/cpu/486/newbios_post.h
 new file mode 100644
 index 0000000000000000000000000000000000000000..07287a8f6aa085b922ccf4ca095f330dea3904bf
@@ -1350,6 +1742,51 @@ index 4cb6e14b27a7cce08551f075fef69477aa051d34..0c5e144b3f02812451137cf52a343d90
  
  #else
  #define post_init
+diff --git a/src/lib/Kconfig b/src/lib/Kconfig
+index 23647947a4fc75bb3b68ad77163721dd8c198db6..c9b3af013e341036b7c5a74fa96a6925ce3865ef 100644
+--- a/src/lib/Kconfig
++++ b/src/lib/Kconfig
+@@ -138,7 +138,7 @@ config CBFS_PRELOAD
+ 	  perform the background transfer.
+ 
+ config DECOMPRESS_OFAST
+-	bool
++	bool "Compile the decompressors with -Ofast (faster, larger)"
+ 	depends on COMPILER_GCC
+ 	default y
+ 	help
+diff --git a/src/lib/bootblock.c b/src/lib/bootblock.c
+index bcd7cac4653fdb38f5386ff5967867e012ea50ae..a7248953e37548edb22a52b16635834a80583f9b 100644
+--- a/src/lib/bootblock.c
++++ b/src/lib/bootblock.c
+@@ -163,7 +163,6 @@ for (unsigned idx=0;idx<0x100;idx++) {
+ #endif
+ 
+ 
+-	printk(BIOS_NOTICE, "before ROM STAGE\n");
+ 
+ 	run_romstage();
+ }
+diff --git a/src/lib/rmodule.c b/src/lib/rmodule.c
+index a9f47af23bc84fd5410c4fa1e444f523598190d1..31144f954907633a9f1381486a629b1c248286c2 100644
+--- a/src/lib/rmodule.c
++++ b/src/lib/rmodule.c
+@@ -124,14 +124,10 @@ static void rmodule_copy_payload(const struct rmodule *module)
+ 	       module->location, rmodule_entry(module),
+ 	       module->payload_size, rmodule_memory_size(module));
+ 
+-	printk(BIOS_DEBUG, "!!CP %p<-%p\n", module->location, module->payload);
+-
+ 	/* No need to copy the payload if the load location and the
+ 	 * payload location are the same. */
+-	if (module->location == module->payload) {
+-		printk(BIOS_DEBUG, " skip same location\n");
++	if (module->location == module->payload)
+ 		return;
+-	}
+ 
+ 	memcpy(module->location, module->payload, module->payload_size);
+ }
 diff --git a/src/mainboard/biostar/mb8433/Makefile.inc b/src/mainboard/biostar/mb8433/Makefile.inc
 index 067135c8edb68b785d8bea4f5160008304a9b43d..0966fef68c23075d4185afe9e505ae10d454dbad 100644
 --- a/src/mainboard/biostar/mb8433/Makefile.inc
@@ -1374,12 +1811,56 @@ index 5775d519435e9b210737826dbc818eb427e96b0a..d44d1069b628256b6bf2813d03d07946
  
  static const struct irq_routing_table mb8433_irq_routing_table = {
  	PIRQ_SIGNATURE,
+diff --git a/src/mainboard/biostar/mb8433/mainboard.c b/src/mainboard/biostar/mb8433/mainboard.c
+index cdee25bf7b472e92238defb7432a7891ef4bff75..f648216b7eccca8db4f166f17566319ca645a5cc 100644
+--- a/src/mainboard/biostar/mb8433/mainboard.c
++++ b/src/mainboard/biostar/mb8433/mainboard.c
+@@ -3,6 +3,7 @@
+ #include <console/console.h>
+ #include <device/pci_ops.h>
+ #include <arch/io.h>
++#include <northbridge/umc/um8881/reg_init.h>
+ 
+ 
+ #define PORT_INDEX	0x108
+@@ -47,6 +48,7 @@ static const struct umc_sio_cfg_entry sio_table[] = {
+ static void mainboard_init(void *chip_info)
+ {
+ 	printk(BIOS_DEBUG, "*** mainboard_init\n");
++	newbios_auto_timings();
+ 
+ 
+ 	//TODO into southbridge
+@@ -88,23 +90,6 @@ c2: 81
+ 		outb(0x55, PORT_INDEX);
+ 	}
+ 
+-#if 1
+-	printk(BIOS_DEBUG, "SIO dump:\n");
+-
+-	for (unsigned idx=0;idx<ARRAY_SIZE(sio_table);idx++) {
+-		//unlock
+-		outb(0xaa, PORT_INDEX);
+-
+-		// must be written immediatelly
+-
+-		outb(sio_table[idx].idx, PORT_INDEX);
+-		printk(BIOS_DEBUG, "%2hhx: %02hhx\n", sio_table[idx].idx, inb(PORT_DATA));
+-
+-		//lock
+-		outb(0x55, PORT_INDEX);
+-	}
+-#endif
+-
+ }
+ 
+ struct chip_operations mainboard_ops = {
 diff --git a/src/mainboard/biostar/mb8433/newbios.c b/src/mainboard/biostar/mb8433/newbios.c
 new file mode 100644
-index 0000000000000000000000000000000000000000..91d4d36f0d41b702edbcdb1542f7125e14815124
+index 0000000000000000000000000000000000000000..e84420450bba91a19fb9818aaf6f685ec8fc148c
 --- /dev/null
 +++ b/src/mainboard/biostar/mb8433/newbios.c
-@@ -0,0 +1,107 @@
+@@ -0,0 +1,165 @@
 +/* SPDX-License-Identifier: GPL-2.0-only */
 +
 +/*
@@ -1390,6 +1871,8 @@ index 0000000000000000000000000000000000000000..91d4d36f0d41b702edbcdb1542f7125e
 +
 +#define __SIMPLE_DEVICE__
 +
++#include <arch/cpu.h>
++#include <arch/io.h>
 +#include <arch/pirq_routing.h>
 +#include <console/console.h>
 +#include <device/pci_ops.h>
@@ -1479,6 +1962,62 @@ index 0000000000000000000000000000000000000000..91d4d36f0d41b702edbcdb1542f7125e
 +	apply(chipset, ARRAY_SIZE(chipset));
 +}
 +
++/* Core clock in MHz: dec + taken jnz is 4 clocks on 486-class CPUs, timed with PIT channel 2. */
++static unsigned int cpu_mhz(void)
++{
++	u32 n = 200000;
++
++	outb((inb(0x61) & ~0x02) | 0x01, 0x61);
++	outb(0xb0, 0x43);
++	outb(0xff, 0x42);
++	outb(0xff, 0x42);
++	asm volatile("1: decl %0; jnz 1b" : "+r"(n));
++	outb(0x80, 0x43);
++	u32 ticks = 0xffff - (inb(0x42) | inb(0x42) << 8);
++	return ticks ? (954545 + ticks / 2) / ticks : 0;	/* 800000 clocks at 1.193182 MHz */
++}
++
++/* Core/bus clock ratio from the family and model (CPUID, else DX at reset); 1 if unknown, which
++   gives the slowest timings. No DX2 runs above 80 MHz: faster ones are DX4s with a DX2 ID. */
++static unsigned int cpu_multiplier(unsigned int mhz)
++{
++	u8 sig = cpu_have_cpuid() ? cpuid_eax(1) >> 4 : cmos_read(NB_CMOS_CPUSIG);
++
++	if (sig >> 4 != 4)
++		return 1;
++	switch (sig & 0x0f) {
++	case 3: case 5: case 7: return mhz > 85 ? 3 : 2;	/* DX2, SX2, DX2 write-back */
++	case 8: case 9: return 3;		/* DX4 */
++	case 14: case 15: return 4;		/* Am5x86 */
++	}
++	return 1;
++}
++
++/* Ramstage, code in DRAM with the caches on, so the clock can be measured: Auto Configuration
++   (or the unfinished-POST fallback) sets the original BIOS's timings for the bus clock, from its own
++   table (HB50/51, IBC56/A4 per bus clock class, verified in 86Box). */
++void newbios_auto_timings(void)
++{
++	static const struct { u8 bus_below, hb50, hb51, ibc56, ibca4; } rows[] = {
++		{ 29,  0x30, 0xf0, 0x00, 0x01 },	/* 16-25 MHz: L2 2-1-1-1, DRAM 0 WS, ISA PCICLK/3, PCI 1:1 */
++		{ 37,  0x10, 0xa0, 0x01, 0x01 },	/* 33 MHz: 3-1-1-1, 1 WS, PCICLK/4, 1:1 */
++		{ 45,  0x00, 0xa0, 0x00, 0x02 },	/* 40 MHz: 3-2-2-2, 1 WS, PCICLK/3, 1:2/3 */
++		{ 255, 0x00, 0x00, 0x00, 0x00 },	/* 50 MHz: 3-2-2-2, 3 WS, PCICLK/3, 1:1/2 */
++	};
++	unsigned int mhz = cpu_mhz(), bus = mhz / cpu_multiplier(mhz), i;
++
++	if (settings_valid() && !setting(NB_CHIPSET_AUTO)
++	    && cmos_read(NB_CMOS_BOOTFAIL) - 1 < NB_BOOTFAIL_MAX)
++		return;		/* the manual values of setup are in use */
++	for (i = 0; bus >= rows[i].bus_below; i++)
++		;
++	printk(BIOS_INFO, "newBIOS: %u MHz bus, auto chipset timings %u\n", bus, i);
++	pci_update_config8(HOST_BRIDGE, HB50_L2_CFG_0, ~0x30, rows[i].hb50);
++	pci_update_config8(HOST_BRIDGE, HB51_L2_CFG_1, ~0xf0, rows[i].hb51);
++	pci_update_config8(ISA_BRIDGE, IBC56_CLOCK, ~0x0f, rows[i].ibc56);
++	pci_update_config8(ISA_BRIDGE, IBCA4_CLOCK_RATIO, ~0x03, rows[i].ibca4);
++}
++
 +/* Ramstage PIRQ routing: links INTA#-INTD# set in setup keep their IRQ. */
 +void mainboard_pirq_preset(unsigned char *pirq)
 +{
@@ -1489,10 +2028,10 @@ index 0000000000000000000000000000000000000000..91d4d36f0d41b702edbcdb1542f7125e
 +}
 diff --git a/src/mainboard/biostar/mb8433/newbios_cmos.h b/src/mainboard/biostar/mb8433/newbios_cmos.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..889dce8454c510d3f787ea6d8ec75ba08b60d698
+index 0000000000000000000000000000000000000000..e1eb9074f2abeb7417eac5141966b4b9e3ce3821
 --- /dev/null
 +++ b/src/mainboard/biostar/mb8433/newbios_cmos.h
-@@ -0,0 +1,56 @@
+@@ -0,0 +1,63 @@
 +/*
 + * newBIOS CMOS layout, shared by SeaBIOS (setup utility, POST options) and coreboot (chipset options).
 + * build.sh copies this file into both trees. One nibble per setting: index i is in byte
@@ -1502,18 +2041,23 @@ index 0000000000000000000000000000000000000000..889dce8454c510d3f787ea6d8ec75ba0
 +#define NEWBIOS_CMOS_H
 +
 +#define NB_CMOS_BASE      0x40
++#define NB_CMOS_HDD       0x62   /* 4 x 5 bytes per IDE drive: type, user cylinders (16-bit), heads, sectors */
 +#define NB_CMOS_PASSWORD  0x78   /* 16-bit hash, 0 = no password */
 +#define NB_CMOS_SIG       0x7b   /* NB_SIG_VALUE when the settings below are valid */
 +#define NB_CMOS_SUM       0x7c   /* big-endian 16-bit sum of NB_CMOS_BASE..NB_CMOS_SIG */
 +#define NB_CMOS_BOOTFAIL  0x7e   /* POSTs started (coreboot) since the last completed one (SeaBIOS) */
-+#define NB_SIG_VALUE      0xa4   /* layout version: change when indexes or meanings change */
++#define NB_CMOS_CPUSIG    0x7f   /* CPU family << 4 | model from DX at reset (bootblock), for CPUs without CPUID */
++#define NB_SIG_VALUE      0xa6   /* layout version: change when indexes or meanings change */
++#define NB_LAYOUT_COUNT   65     /* NB_COUNT of this version (setup.c checks it) */
 +#define NB_BOOTFAIL_MAX   2      /* coreboot falls back to chipset defaults after this many failures */
++#define NB_HDD_NONE       1      /* drive types: 0 auto, 1 none, 2-47 type 1-46 (16: reserved 15), 48 user */
++#define NB_HDD_USER       48
 +
 +enum nb_setting {
 +	/* Standard CMOS */
 +	NB_FLOPPY_A, NB_FLOPPY_B,               /* 0 none, 1 360K, 2 1.2M, 3 720K, 4 1.44M, 5 2.88M */
-+	NB_IDE_TYPE0, NB_IDE_TYPE1, NB_IDE_TYPE2, NB_IDE_TYPE3,   /* PM, PS, SM, SS: 0 auto, 1 none */
-+	NB_IDE_MODE0, NB_IDE_MODE1, NB_IDE_MODE2, NB_IDE_MODE3,   /* 0 auto, 1 normal, 2 LBA, 3 large */
++	NB_IDE_MODE0, NB_IDE_MODE1, NB_IDE_MODE2, NB_IDE_MODE3,   /* PM, PS, SM, SS: 0 auto, 1 normal, 2 LBA, 3 large */
++	NB_HALT_ON,                             /* 0 all errors, 1 none, 2 all but keyboard, 3 diskette, 4 disk/key */
 +	/* BIOS features */
 +	NB_L1_CACHE, NB_L2_CACHE,               /* 0 disabled, 1 enabled */
 +	NB_BOOT1, NB_BOOT2, NB_BOOT3, NB_BOOT4, /* 1 floppy, 2 hard disk, 3 CD-ROM, 4 network */
@@ -1522,6 +2066,7 @@ index 0000000000000000000000000000000000000000..889dce8454c510d3f787ea6d8ec75ba0
 +	NB_TYPEMATIC, NB_TYPEMATIC_RATE, NB_TYPEMATIC_DELAY,  /* rate 6..30 chars/s, delay 250..1000 ms */
 +	NB_SECURITY,                            /* 0 setup, 1 system */
 +	NB_QUICK_POST,                          /* 1: memory test reads one dword per KiB */
++	NB_IDE_BLOCK,                           /* 1: READ/WRITE MULTIPLE (IDE HDD Block Mode) */
 +	NB_SHADOW_C8, NB_SHADOW_CC, NB_SHADOW_D0, NB_SHADOW_D4, NB_SHADOW_D8, NB_SHADOW_DC,
 +	/* Chipset features (coreboot, only when NB_CHIPSET_AUTO is 0) */
 +	NB_CHIPSET_AUTO,
@@ -1537,6 +2082,7 @@ index 0000000000000000000000000000000000000000..889dce8454c510d3f787ea6d8ec75ba0
 +	NB_PCI_IRQ_A, NB_PCI_IRQ_B, NB_PCI_IRQ_C, NB_PCI_IRQ_D,   /* 0 auto, else IRQ number */
 +	NB_IDE_PIO0, NB_IDE_PIO1, NB_IDE_PIO2, NB_IDE_PIO3,       /* 0 auto, n = PIO mode n-1 */
 +	NB_IDE_32BIT,
++	NB_ISAPNP,                              /* 1: configure ISA PnP cards at POST (PnP BIOS Auto-Config) */
 +	/* Integrated peripherals */
 +	NB_IDE_PRIMARY, NB_IDE_SECONDARY, NB_FDC,
 +	NB_COM1,                                /* 0 disabled, 1 3F8/IRQ4, 2 3E8/IRQ4 */
@@ -1580,20 +2126,21 @@ index 0bc85cc6eb0f391eecbaed5040be75f5807a593e..2c3acc744f3e208c6fc5b5da98934085
  	//CSEG shadow
  	// printk(BIOS_INFO, "++++RAM++++ segment Call use RAM shadow\n");
 diff --git a/src/northbridge/umc/um8881/reg_init.h b/src/northbridge/umc/um8881/reg_init.h
-index 3cafb81da5377ec0c3fa459d9afd377b3fbdb2d4..0fb90cebad5c21a2bc96ed126b7f33289176c8d5 100644
+index 3cafb81da5377ec0c3fa459d9afd377b3fbdb2d4..d0def3e0f970dde5b2718008f9e584c057679eeb 100644
 --- a/src/northbridge/umc/um8881/reg_init.h
 +++ b/src/northbridge/umc/um8881/reg_init.h
-@@ -82,6 +82,8 @@ HB61=c4
+@@ -82,6 +82,9 @@ HB61=c4
  #include <types.h>
  #include <device/pci_type.h>
  
 +void newbios_chipset_options(void);
++void newbios_auto_timings(void);
 +
  #define HOST_BRIDGE		PCI_DEV(0, 0x10, 0)
  #define ISA_BRIDGE		PCI_DEV(0, 0x12, 0)
  #define IDE_CONTROLLER		PCI_DEV(0, 0x12, 1)
 diff --git a/src/northbridge/umc/um8881/romstage.c b/src/northbridge/umc/um8881/romstage.c
-index fc091da7f681c76ff1da4e55a83f06e88309d0c2..277e7a48f032cf85c2e62b122becc7a5f687d03c 100644
+index fc091da7f681c76ff1da4e55a83f06e88309d0c2..0425ea73f951b7e8eee459f9365078881b2cbd80 100644
 --- a/src/northbridge/umc/um8881/romstage.c
 +++ b/src/northbridge/umc/um8881/romstage.c
 @@ -5,25 +5,51 @@
@@ -1700,7 +2247,7 @@ index fc091da7f681c76ff1da4e55a83f06e88309d0c2..277e7a48f032cf85c2e62b122becc7a5
  /*
  	printk(BIOS_DEBUG, "Erase high RAM\n");
  	for (uintptr_t addr = 128*MiB - 1*MiB; addr < 128*MiB; addr+=4) {
-@@ -87,6 +122,7 @@ void mainboard_romstage_entry(void)
+@@ -87,31 +122,26 @@ void mainboard_romstage_entry(void)
  	//move raminit to bootblock?
  
  	//disable write protect
@@ -1708,7 +2255,40 @@ index fc091da7f681c76ff1da4e55a83f06e88309d0c2..277e7a48f032cf85c2e62b122becc7a5
  	pci_update_config8(HOST_BRIDGE, HB55_SHADOW_CFG, ~0x40, 0);
  
  	//copy ROME to shadowE
-@@ -159,7 +195,9 @@ void mainboard_romstage_entry(void)
+-	printk(BIOS_INFO, "TODO? fill shadow E\n");
+ 	//NOTICE when disabled, L2 will cause crashes ... may interference with L2 fill in a good way
+ 	memcpy((void*)0xe0000, (void*)0xfffe0000, 0x10000);
+ 
+ 	//copy ROMF to shadowF
+-	printk(BIOS_INFO, "TODO? fill shadow F\n");
+ 	// memcpy((void*)0xf0000, (void*)0xffff0000, 0x10000);
+ 
+ 	//CSEG shadow
+-	printk(BIOS_INFO, "++++ROM++++ segment C use RAM shadow\n");
+ 	pci_update_config8(HOST_BRIDGE, HB54_SHADOW_EN, ~0, 0xe);
+ 
+ 	//DSEG shadow
+-	printk(BIOS_INFO, "++++ROM++++ segment D use RAM shadow\n");
+ 	pci_update_config8(HOST_BRIDGE, HB54_SHADOW_EN, ~0, 0xf0);
+ 
+ 	//segE shadow read
+-	printk(BIOS_INFO, "++++ROM++++ segment E use RAM shadow\n");
+ 	pci_update_config8(HOST_BRIDGE, HB54_SHADOW_EN, ~0, 1);
+ 
+ 	//global + segF shadow read
+-	printk(BIOS_INFO, "++++ROM++++ segment F use RAM shadow\n");
+ 	pci_update_config8(HOST_BRIDGE, HB55_SHADOW_CFG, ~0, 0x80);
+ 
+ 
+@@ -119,7 +149,6 @@ void mainboard_romstage_entry(void)
+ 
+ 	//NOTICE NOTICE NOTICE NOTICE experiments
+ 	//set if pci video bios installed?
+-	printk(BIOS_INFO, "Set if PCI VGA is used\n");
+ 	pci_update_config8(ISA_BRIDGE, IBC50_PCI_VIDEO, ~0, 0x80);
+ 
+ 	pci_update_config8(ISA_BRIDGE, IBC50_PCI_VIDEO, ~0, 1);
+@@ -159,7 +188,9 @@ void mainboard_romstage_entry(void)
  
  // printk(BIOS_DEBUG, "cbmem_initialize {\n");
  
@@ -1749,3 +2329,15 @@ index a42b842c46feec5e218740e20bc604c707108509..648a16deec63489f340ca9579f6d6320
  	if (!pdev) {
  		printk(BIOS_ERR, "UMC IBC not found, cannot assign PIRQ!\n");
  		return;
+diff --git a/src/southbridge/umc/um8886/um8886.c b/src/southbridge/umc/um8886/um8886.c
+index 5866170a67d2828e51976b8d4bd079e833d8d121..98037c9cfd913c901afb0f59f93fc560eed60a63 100644
+--- a/src/southbridge/umc/um8886/um8886.c
++++ b/src/southbridge/umc/um8886/um8886.c
+@@ -13,7 +13,6 @@
+ static void um8886_init(void *chip_info)
+ {
+ 	//NOTICE right after ramstage
+-	printk(BIOS_DEBUG, "UMC IBC init, TODO\n");
+ 	//TODO which can be left to seabios?
+ 	isa_dma_init();
+ 	setup_i8259();

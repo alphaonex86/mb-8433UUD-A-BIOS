@@ -5,7 +5,7 @@
 . "$(dirname "$0")/lib.sh"
 dos_disk "$vm_dir/hdd.img"
 vm_start chipset "$rom" "$(disk_cfg "$vm_dir/hdd.img")"
-vm_wait_text "Press DEL to enter SETUP, ESC for boot" 60
+vm_end_of_post 60
 vm_setup
 
 vm_menu 2                                         # CHIPSET FEATURES SETUP
@@ -36,7 +36,7 @@ vm_expect "IDE Primary Master PIO +: Mode 2"
 vm_key $K_ESC
 vm_menu 5                                         # INTEGRATED PERIPHERALS
 for _ in $(seq 4); do vm_key $K_DOWN; done        # serial port 2
-vm_key $K_PGUP                                    # COM2 -> disabled
+vm_key $K_PGUP $K_PGUP                            # COM2 COM4/2E8 -> disabled
 vm_key $K_DOWN $K_PGDN                            # parallel 378 -> 278
 vm_key $K_DOWN $K_PGDN $K_PGDN                    # SPP -> ECP
 vm_expect "Onboard Serial Port 2 +: Disabled"
@@ -62,7 +62,7 @@ check_chipset() {  # manual values applied (1) or default ones (0)
   expect_bits "$(vm_pci_byte 00:10.0 59)" 0xff 0x00 "HB59 with System BIOS cacheable (as the original)"
 }
 
-vm_wait_text "Press DEL to enter SETUP, ESC for boot" 60
+vm_end_of_post 60
 vm_expect "Serial Port\(s\) +: 3F8 +$"
 vm_expect "Parallel Port\(s\) : 278"
 vm_expect "Pri. Master Disk : 31MB, PIO 2"
@@ -80,12 +80,12 @@ expect_bits "$c1" 0xca 0xc2 "LPT 278 ECP, COM1 3F8 (SIO C1)"
 vm_cmd out 70 7e
 vm_cmd out 71 02
 vm_cmd reset
-vm_wait_text "Press DEL to enter SETUP, ESC for boot" 60
+vm_end_of_post 60
 check_chipset 0
 vm_expect "Chipset setup values not used after 2 unfinished POSTs"
 vm_wait_text "DOS-TEST-OK" 60                     # POST completed
 expect_bits "$(vm_cr0)" 0x40000000 0x40000000 "L1 cache still disabled in DOS (CR0.CD)"
 vm_cmd reset
-vm_wait_text "Press DEL to enter SETUP, ESC for boot" 60
+vm_end_of_post 60
 check_chipset 1
 vm_stop

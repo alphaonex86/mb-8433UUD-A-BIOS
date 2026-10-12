@@ -13,6 +13,7 @@ export BOX86_SLIRP_TFTP=$vm_dir/tftp BOX86_SLIRP_BOOTFILE=boot.pxe
 vm_start pxe "$rom" "$(disk_cfg "$vm_dir/hdd.img")
 $(nic_cfg "$nb/test/roms/etherboot-5.4.4-rtl8139.rom")"
 
+vm_end_of_post
 vm_wait_text "DOS-TEST-OK" 90
 vm_cmd reset
 vm_wait_text "Press DEL to enter SETUP" 40

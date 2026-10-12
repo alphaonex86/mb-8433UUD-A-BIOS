@@ -13,6 +13,7 @@ bios_addr = DC000
 hdd_01_parameters = 63, 16, 65, 0, scsi
 hdd_01_fn = $vm_dir/scsi.img
 hdd_01_scsi_location = 0:00"
+vm_end_of_post
 vm_wait_text "SCSI-DOS-OK" 90
 vm_expect "BIOS Installed Successfully"
 vm_expect "Drive C: \(80h\)"

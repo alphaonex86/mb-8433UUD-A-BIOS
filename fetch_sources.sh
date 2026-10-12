@@ -22,6 +22,9 @@ file_sha() {  # url, sha256, file
 # Firmware: the 486 coreboot and SeaBIOS trees of their author (github.com/pc2005cz), patched by build.sh.
 git_at https://github.com/pc2005cz/coreboot_486.git ff1be301ad1bbb35d1644243dd63d4b2c8fd8a8d "$src/coreboot_486"
 git_at https://github.com/pc2005cz/seabios_486.git 7d5405a094acca0cb80bb7c1fb94425ce181031b "$src/seabios_486"
+# Built-in network boot ROM (tools/build_etherboot.sh).
+file_sha https://downloads.sourceforge.net/project/etherboot/etherboot/5.4.4/etherboot-5.4.4.tar.bz2 \
+  a84af97370d6b93012a4aa171990d87f766b453d27bf837e376783577c30932a "$src/etherboot-5.4.4.tar.bz2"
 [ "${1:-}" = firmware ] && exit 0
 
 # Tests: 86Box 6.0 (patched into the test emulator), iPXE (PXE NBP), FreeDOS 1.3, Linux 6.18 (last i486 LTS).

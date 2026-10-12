@@ -6,7 +6,7 @@ here=$(dirname "$(readlink -f "$0")")
 nb=$(dirname "$here")
 "$nb/fetch_sources.sh" && "$nb/build_86box.sh" > /dev/null && "$nb/build.sh" > /dev/null && "$here/ipxe/build.sh" \
   && "$here/linux/build.sh" > /dev/null || { echo "BUILD FAILED" >&2; exit 1; }
-[ $# -gt 0 ] || set -- setup dos scsi pxe chipset password bigdisk ram memtest post
+[ $# -gt 0 ] || set -- setup dos scsi pxe pxebios pxe8169 chipset password bigdisk ram memtest post errors hddtype busclock isapnp
 mkdir -p "$here/vm"
 for t; do timeout 600 "$here/$t.sh" > "$here/vm/$t.out" 2>&1 & done
 wait

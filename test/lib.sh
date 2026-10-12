@@ -3,7 +3,7 @@
 # Source it, then: vm_start <name> <rom> [extra 86box.cfg lines]; vm_wait_text ...; vm_stop
 set -euo pipefail
 nb=$(dirname "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")")
-emu=$nb/build/86box/out/src/86Box
+emu=${EMU:-$nb/build/86box/out/src/86Box}   # EMU: another 86Box build
 rom=${ROM:-$nb/out/newbios.rom}   # ROM=out/newbios-debug.rom for full COM1 logs
 vm_dir=$nb/test/vm/$(basename "$0" .sh)
 [ -x "$emu" ] || "$nb/build_86box.sh" > /dev/null
@@ -14,7 +14,8 @@ ram_cfg() {  # SIMM types of banks 0-3 (0 empty, see umc_hb4.c), L2 KB, L2 banks
   printf '[UMC HB4(8881F)]\nbank0 = %s\nbank1 = %s\nbank2 = %s\nbank3 = %s\nl2_cache = %s\nl2_banks = %s\n' "$@"
 }
 
-vm_start() {  # name, rom, extra config lines; RAM: $vm_ram (default 32 MB in bank 0, 256 KB L2)
+vm_start() {  # name, rom, extra config lines; RAM: $vm_ram (default 32 MB in bank 0, 256 KB L2),
+              # CPU: $vm_cpu_family/speed/multi (default Am5x86-133)
   vm_name=$1
   vm=$vm_dir
   rm -rf "$vm/nvr" "$vm/post.log"   # fresh CMOS and flash, POST codes of this boot only
@@ -23,9 +24,9 @@ vm_start() {  # name, rom, extra config lines; RAM: $vm_ram (default 32 MB in ba
   cat > "$vm/86box.cfg" <<EOF
 [Machine]
 machine = 84xxuuda
-cpu_family = am5x86
-cpu_speed = 133333333
-cpu_multi = 4
+cpu_family = ${vm_cpu_family:-am5x86}
+cpu_speed = ${vm_cpu_speed:-133333333}
+cpu_multi = ${vm_cpu_multi:-4}
 cpu_use_dynarec = 1
 fpu_type = internal
 mem_size = 131072
@@ -145,9 +146,16 @@ vm_setup() {  # DEL at the prompt -> main menu of the setup utility
   menu_sel=0
 }
 
-vm_menu() {  # main menu entry index (0-12, column by column) -> opens it; the menu keeps its cursor
+vm_end_of_post() {  # [timeout] -> the setup prompt; F1 past the POST error halt (e.g. cleared CMOS)
+  vm_wait_text "Press F1 to continue|Press DEL to enter SETUP, ESC for boot" "${1:-60}"
+  grep -q "Press F1 to continue" "$vm/screen.txt" || return 0
+  vm_key $K_F1
+  vm_wait_text "Press DEL to enter SETUP, ESC for boot" 10
+}
+
+vm_menu() {  # main menu entry index (0-13, column by column) -> opens it; the menu keeps its cursor
   local i
-  for ((i = 0; i < ($1 - menu_sel + 13) % 13; i++)); do vm_key $K_DOWN; done
+  for ((i = 0; i < ($1 - menu_sel + 14) % 14; i++)); do vm_key $K_DOWN; done
   menu_sel=$1
   vm_key $K_ENTER
 }
@@ -187,5 +195,5 @@ expect_bits() {  # value mask expected name
 }
 
 # Scan codes
-K_ESC=01 K_UP=48 K_DOWN=50 K_LEFT=4b K_RIGHT=4d K_DEL=53 K_F9=43 K_F10=44 K_ENTER=1c
+K_F1=3b K_ESC=01 K_UP=48 K_DOWN=50 K_LEFT=4b K_RIGHT=4d K_DEL=53 K_F9=43 K_F10=44 K_ENTER=1c
 K_PGUP=49 K_PGDN=51 K_Y=15

@@ -28,7 +28,7 @@ tag=$(echo "${@:1:6}" | tr ' ' _)
 vm_dir=$vm_dir/$tag
 vm_ram=$(ram_cfg "${@:1:6}")
 vm_start "ram $tag" "$rom"
-vm_wait_text "Press DEL to enter SETUP, ESC for boot" 120   # summary box, kept until boot
+vm_end_of_post 120   # summary box, kept until boot
 cache=$8; [ "$cache" = none ] && cache=0K
 grep -q "Extended Memory  : $(($7 - 1024))K" "$vm/screen.txt" || fail "no 'Extended Memory  : $(($7 - 1024))K'"
 grep -q "Cache Memory     : $cache" "$vm/screen.txt" || fail "no 'Cache Memory     : $cache'"

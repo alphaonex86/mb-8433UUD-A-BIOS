@@ -1,6 +1,6 @@
 #!/bin/bash
 # Build the PXE NBP used by the network boot test -> newBIOS/build/ipxe-chain.pxe (iPXE, netboot config
-# from configs/ipxe, embedded chain.ipxe).
+# from configs/ipxe, embedded chain.ipxe), and the RTL8169 boot ROM -> newBIOS/build/ipxe-rtl8169.rom.
 set -euo pipefail
 nb=$(dirname "$(dirname "$(dirname "$(readlink -f "$0")")")")
 src=$nb/build/ipxe
@@ -13,3 +13,7 @@ ipxe() { make -C "$src/src" -s -j"$(nproc)" CROSS="$nb/sources/coreboot_486/util
 # PXE NBP for PXE-capable socket ROMs (e.g. Etherboot 5.4): DHCP again, then the Linux bzImage by TFTP.
 ipxe bin/10ec8139.pxe EMBED="$(dirname "$(readlink -f "$0")")/chain.ipxe"
 cp "$src/src/bin/10ec8139.pxe" "$nb/build/ipxe-chain.pxe"
+# Boot ROM for an RTL8169's socket: DHCP, then the Linux bzImage by TFTP with ip=dhcp (r8169 DHCPs again).
+printf '#!ipxe\ndhcp\nchain tftp://${next-server}/bzImage ip=dhcp\n' > "$nb/build/ipxe-rtl8169.ipxe"
+ipxe bin/10ec8169.rom EMBED="$nb/build/ipxe-rtl8169.ipxe"
+cp "$src/src/bin/10ec8169.rom" "$nb/build/ipxe-rtl8169.rom"

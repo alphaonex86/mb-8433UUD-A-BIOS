@@ -5,7 +5,7 @@
 type_word() { local k; for k in "$@"; do vm_key "$k"; done; vm_key $K_ENTER; }
 ABC="1e 30 2e" XYZ="2d 15 2c"
 vm_start password "$rom"
-vm_wait_text "Press DEL to enter SETUP, ESC for boot" 60
+vm_end_of_post 60
 vm_setup
 vm_menu 7                                          # SUPERVISOR PASSWORD
 vm_wait_text "Enter Password:" 5
@@ -24,7 +24,7 @@ vm_wait_text "Enter Password:" 60                  # before boot
 type_word $XYZ
 vm_wait_text "Enter Password:" 5
 type_word $ABC
-vm_wait_text "Press DEL to enter SETUP, ESC for boot" 30
+vm_end_of_post 30
 vm_key $K_DEL
 vm_wait_text "Enter Password:" 10                  # entering setup
 type_word $ABC

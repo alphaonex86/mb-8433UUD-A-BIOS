@@ -141,7 +141,7 @@ SETUP DEFAULTS at the same position (row 14, col 5): only one is shown (which on
 **2.5 IDE block mode (READ/WRITE MULTIPLE).** [V]
 - INT 13h disk entry F000:A404, function table F000:A50C. At F000:A98E, if the per-drive multiple count
   (BDA 40:AD-40:B0) > 1, command 20h becomes C4h and 30h becomes C5h (`shr 4; add C2h`).
-- "IDE HDD Block Mode" (CMOS 11h bit6) default Enabled in both sets. newBIOS: not implemented (README).
+- "IDE HDD Block Mode" (CMOS 11h bit6) default Enabled in both sets. newBIOS: same item and default, also for LBA48 (C4h/C5h, 29h/39h).
   Benefit [I]: fewer DRQ handshakes in DOS disk I/O; small for SeaBIOS's polled PIO.
 
 **2.6 Hard disk type table and User type.** [V]
