@@ -1,5 +1,5 @@
 diff --git a/src/86box.c b/src/86box.c
-index 4f5da88..9910268 100644
+index 4f5da88f199ed90e611a2094dc49e423e906b5ae..9910268a68e84ee99bc66e46fea234d75a3d3d2d 100644
 --- a/src/86box.c
 +++ b/src/86box.c
 @@ -1547,6 +1547,8 @@ pc_init_modules(void)
@@ -20,7 +20,7 @@ index 4f5da88..9910268 100644
      /* Done with this frame, update statistics. */
      framecount++;
 diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
-index c677c53..6814920 100644
+index c677c5367d266231d25eef323d933cbcc3b51699..6814920d5f66aacca909eb1090a1e47dfe34d726 100644
 --- a/src/CMakeLists.txt
 +++ b/src/CMakeLists.txt
 @@ -26,6 +26,7 @@ endif()
@@ -32,7 +32,7 @@ index c677c53..6814920 100644
      timer.c
      io.c
 diff --git a/src/chipset/umc_8886.c b/src/chipset/umc_8886.c
-index 7350f50..8d6fc20 100644
+index 7350f50584e5aefacecb88f7cceb7c31479f9b4f..8d6fc2079fe3610ee11a19cad83f34a05c61cb86 100644
 --- a/src/chipset/umc_8886.c
 +++ b/src/chipset/umc_8886.c
 @@ -340,6 +340,7 @@ umc_8886_reset(void *priv)
@@ -44,7 +44,7 @@ index 7350f50..8d6fc20 100644
          dev->pci_conf_sb[1][0x08] = 0x10;
          dev->pci_conf_sb[1][0x09] = 0x8f;
 diff --git a/src/chipset/umc_hb4.c b/src/chipset/umc_hb4.c
-index cbb80c8..8c63da4 100644
+index cbb80c8fa5ad26c64eed8608a3f8ef9ed2abd4f8..8c63da441f9198f3ef890d010deb1d7ffc9f677f 100644
 --- a/src/chipset/umc_hb4.c
 +++ b/src/chipset/umc_hb4.c
 @@ -135,6 +135,22 @@ hb4_log(const char *fmt, ...)
@@ -679,7 +679,7 @@ index cbb80c8..8c63da4 100644
 +    .config        = hb4_config
  };
 diff --git a/src/cpu/cpu.c b/src/cpu/cpu.c
-index 9e93f45..6528356 100644
+index 9e93f45554e1f48f58e9d5b1882ad51ea170f792..652835663a573c53fa6a760d983565c07b273edc 100644
 --- a/src/cpu/cpu.c
 +++ b/src/cpu/cpu.c
 @@ -176,6 +176,7 @@ int cpu_mem_prefetch_cycles;
@@ -691,7 +691,7 @@ index 9e93f45..6528356 100644
  int cpu_flush_pending;
  int cpu_old_paging;
 diff --git a/src/cpu/cpu.h b/src/cpu/cpu.h
-index 6b775e5..93d9801 100644
+index 6b775e5690fc75b6e8f15f4c4c15e787894fd193..93d980169bc1645c7aa972751a0938781fd1b068 100644
 --- a/src/cpu/cpu.h
 +++ b/src/cpu/cpu.h
 @@ -644,6 +644,9 @@ extern int cpu_waitstates;
@@ -705,7 +705,7 @@ index 6b775e5..93d9801 100644
  extern int cpu_isa_speed;
  extern int cpu_pci_speed;
 diff --git a/src/cpu/x86.c b/src/cpu/x86.c
-index a262328..c13ddd5 100644
+index a262328b75c344c1fb7f31dc6985ae1351023575..c13ddd5a5e85a51ad8a79077d946d67e3f324a51 100644
 --- a/src/cpu/x86.c
 +++ b/src/cpu/x86.c
 @@ -287,6 +287,8 @@ reset_common(int hard)
@@ -729,7 +729,7 @@ index a262328..c13ddd5 100644
          if (hard) {
              rammask = cpu_16bitbus ? 0xFFFFFF : 0xFFFFFFFF;
 diff --git a/src/cpu/x86_ops_misc.h b/src/cpu/x86_ops_misc.h
-index 5ae28ab..b09a833 100644
+index 5ae28abc4a7286dc933ff608da8051e30370de1b..b09a833d84103b49c2c93b3ce83e63b0901846d6 100644
 --- a/src/cpu/x86_ops_misc.h
 +++ b/src/cpu/x86_ops_misc.h
 @@ -871,6 +871,8 @@ opCLTS(UNUSED(uint32_t fetchdat))
@@ -751,7 +751,7 @@ index 5ae28ab..b09a833 100644
      CPU_BLOCK_END();
      return 0;
 diff --git a/src/cpu/x86_ops_mov_ctrl.h b/src/cpu/x86_ops_mov_ctrl.h
-index 3e6cc40..59caaec 100644
+index 3e6cc40cfce347891dfcbfbdda5fef84818d2745..59caaec5b4b00f08264031c686b2e969fdafbefa 100644
 --- a/src/cpu/x86_ops_mov_ctrl.h
 +++ b/src/cpu/x86_ops_mov_ctrl.h
 @@ -211,6 +211,8 @@ opMOV_CRx_r_a16(uint32_t fetchdat)
@@ -773,7 +773,7 @@ index 3e6cc40..59caaec 100644
          case 2:
              cr2 = cpu_state.regs[cpu_rm].l;
 diff --git a/src/cpu/x86_ops_mov_ctrl_2386.h b/src/cpu/x86_ops_mov_ctrl_2386.h
-index a1126f8..b09e221 100644
+index a1126f8079d26be2ec8b15b23592b253fd1a0865..b09e2212777a3b388fdad39174d8acf8053dae66 100644
 --- a/src/cpu/x86_ops_mov_ctrl_2386.h
 +++ b/src/cpu/x86_ops_mov_ctrl_2386.h
 @@ -203,6 +203,8 @@ opMOV_CRx_r_a16(uint32_t fetchdat)
@@ -795,7 +795,7 @@ index a1126f8..b09e221 100644
          case 2:
              cr2 = cpu_state.regs[cpu_rm].l;
 diff --git a/src/device/postcard.c b/src/device/postcard.c
-index f842cbb..bf9c096 100644
+index f842cbb338f9527099a3a53bb83d7c3359e3b786..bf9c096af36fcc9ab4d605b2e51be3da39dce484 100644
 --- a/src/device/postcard.c
 +++ b/src/device/postcard.c
 @@ -14,6 +14,7 @@
@@ -821,7 +821,7 @@ index f842cbb..bf9c096 100644
          postcard_written[port & POSTCARD_MASK]++;
  
 diff --git a/src/disk/hdc_ide.c b/src/disk/hdc_ide.c
-index e2ffcab..39e4c3e 100644
+index e2ffcab024fd0e8190dd5ad0b4ba11c609cc2347..39e4c3e54b73a8bd52955aeb833a14ba526926b3 100644
 --- a/src/disk/hdc_ide.c
 +++ b/src/disk/hdc_ide.c
 @@ -74,6 +74,9 @@
@@ -969,7 +969,7 @@ index e2ffcab..39e4c3e 100644
                      ide->tf->atastat = DRQ_STAT | DRDY_STAT | DSC_STAT;
                      ide->tf->pos     = 0;
 diff --git a/src/include/86box/86box.h b/src/include/86box/86box.h
-index 4308a89..54ee4d2 100644
+index 4308a893685443e12b91fceed2e2a64d53f758cf..54ee4d2c5e98681df68a8dcc59a7f28b9ca6a34a 100644
 --- a/src/include/86box/86box.h
 +++ b/src/include/86box/86box.h
 @@ -300,6 +300,8 @@ extern void pc_send_cad(void);
@@ -982,7 +982,7 @@ index 4308a89..54ee4d2 100644
  extern void pc_onesec(void);
  #ifdef _WIN32
 diff --git a/src/include/86box/hdc_ide.h b/src/include/86box/hdc_ide.h
-index 7d7d0c1..0c2d163 100644
+index 7d7d0c1e36cf118b15878c736ed89b5eafe8ee13..0c2d1632521bd82a2722733c894face1266d011d 100644
 --- a/src/include/86box/hdc_ide.h
 +++ b/src/include/86box/hdc_ide.h
 @@ -100,7 +100,9 @@ typedef struct ide_s {
@@ -997,7 +997,7 @@ index 7d7d0c1..0c2d163 100644
      uint32_t spt;
      uint32_t hpc;
 diff --git a/src/network/net_rtl8139.c b/src/network/net_rtl8139.c
-index 0daf25a..7f3ae6c 100644
+index 0daf25a6a30d2e667f9a6c3d921ab279d6562fd3..7f3ae6cf342c71322b29f3dc24cb5382601cb51d 100644
 --- a/src/network/net_rtl8139.c
 +++ b/src/network/net_rtl8139.c
 @@ -45,10 +45,13 @@
@@ -1153,7 +1153,7 @@ index 0daf25a..7f3ae6c 100644
  };
  // clang-format on
 diff --git a/src/network/net_slirp.c b/src/network/net_slirp.c
-index d40505b..4dd2593 100644
+index d40505bf06d2032c6794448ad9ad52a1b92f32ee..4dd25930819cefbe57375fe6e99e8671b5740ac4 100644
 --- a/src/network/net_slirp.c
 +++ b/src/network/net_slirp.c
 @@ -536,8 +536,8 @@ net_slirp_init(const netcard_t *card, const uint8_t *mac_addr, UNUSED(void *priv
@@ -1169,7 +1169,7 @@ index d40505b..4dd2593 100644
          .vnameserver6          = { .s6_addr = { 0xfe, 0xc0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x03 } }, /* fec0::3 - unused */
 diff --git a/src/testctl.c b/src/testctl.c
 new file mode 100644
-index 0000000..8a545c7
+index 0000000000000000000000000000000000000000..8a545c7a0ac1c16836f3fbc2b14e6c374125c40e
 --- /dev/null
 +++ b/src/testctl.c
 @@ -0,0 +1,185 @@

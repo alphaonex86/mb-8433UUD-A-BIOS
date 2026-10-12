@@ -22,5 +22,5 @@ build() {  # build dir, cmake options
 build out -DQT=OFF
 [ -z "${GUI:-}" ] || build out-qt -DQT=ON -DUSE_QT6=ON
 git -C "$src" add -N src
-git -C "$src" diff > "$nb/patches/86box.patch"
+git -C "$src" diff --full-index > "$nb/patches/86box.patch"
 echo "$src/out/src/86Box"

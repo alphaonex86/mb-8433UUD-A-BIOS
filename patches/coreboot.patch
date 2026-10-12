@@ -1,5 +1,5 @@
 diff --git a/src/arch/486/assembly_entry.S b/src/arch/486/assembly_entry.S
-index 7f4cd5d..b96c258 100644
+index 7f4cd5d34f0ce4791304e4b6fe37470e67d2d392..b96c258b62f928186d51dec0c1697b8dc8de8ada 100644
 --- a/src/arch/486/assembly_entry.S
 +++ b/src/arch/486/assembly_entry.S
 @@ -19,10 +19,17 @@
@@ -51,7 +51,7 @@ index 7f4cd5d..b96c258 100644
  
  	/* Expect to never return. */
 diff --git a/src/arch/486/bootblock.ld b/src/arch/486/bootblock.ld
-index 1126c84..b2df67a 100644
+index 1126c84b9b15c6e492d96ad0f85e84f0eaab1150..b2df67a25aea22f1aa3f5b29f6e63c19e262a56e 100644
 --- a/src/arch/486/bootblock.ld
 +++ b/src/arch/486/bootblock.ld
 @@ -1,5 +1,20 @@
@@ -94,7 +94,7 @@ index 1126c84..b2df67a 100644
  		*(.reset);
  		. = _X86_RESET_VECTOR_FILLING;
 diff --git a/src/arch/486/c_start.S b/src/arch/486/c_start.S
-index 3409a5d..5ebe85e 100644
+index 3409a5d17ae4b026da2f8de47d589bd04dad75a1..5ebe85ecaaf39696c66d610868a4ecfac5f0482d 100644
 --- a/src/arch/486/c_start.S
 +++ b/src/arch/486/c_start.S
 @@ -3,6 +3,15 @@
@@ -197,7 +197,7 @@ index 3409a5d..5ebe85e 100644
  	.rept CONFIG_MAX_CPUS
  	/* flat data segment */
 diff --git a/src/arch/486/car.ld b/src/arch/486/car.ld
-index 2c686a7..194fa55 100644
+index 2c686a745f572771cf44c7a4ae8e274009c4378c..194fa55c27d2e70cc78961bd141c3758cb0ba562 100644
 --- a/src/arch/486/car.ld
 +++ b/src/arch/486/car.ld
 @@ -4,6 +4,16 @@
@@ -227,7 +227,7 @@ index 2c686a7..194fa55 100644
  #if CONFIG(NORTHBRIDGE_ALI_M1489)
  . = 0x000fff00;
 diff --git a/src/arch/486/exit_car.S b/src/arch/486/exit_car.S
-index 7874c13..ef99afd 100644
+index 7874c1321f0c41e38ee6bc7830de6c98af66296c..ef99afd4e39e38864476ef99abb008bff0893af7 100644
 --- a/src/arch/486/exit_car.S
 +++ b/src/arch/486/exit_car.S
 @@ -2,9 +2,25 @@
@@ -414,7 +414,7 @@ index 7874c13..ef99afd 100644
  	/* Should never return. */
  1:
 diff --git a/src/arch/486/gdt_init.S b/src/arch/486/gdt_init.S
-index 456084f..9f73a30 100644
+index 456084fde741a48b29ab921a5366a84139d0a94b..9f73a304df082ae07227732af9889cf76f29cd7c 100644
 --- a/src/arch/486/gdt_init.S
 +++ b/src/arch/486/gdt_init.S
 @@ -1,11 +1,24 @@
@@ -470,7 +470,7 @@ index 456084f..9f73a30 100644
  	.byte   0x00, 0x9b, 0xaf, 0x00
  
 diff --git a/src/arch/486/id.S b/src/arch/486/id.S
-index 64f7a79..e5179e9 100644
+index 64f7a799b0af337b1c8fcc0ed722fcd1d010d8ec..e5179e94792474f6c926547262eecf7a6f77ab2e 100644
 --- a/src/arch/486/id.S
 +++ b/src/arch/486/id.S
 @@ -1,5 +1,15 @@
@@ -490,7 +490,7 @@ index 64f7a79..e5179e9 100644
  
  .section ".id", "a", @progbits
 diff --git a/src/arch/486/idt.S b/src/arch/486/idt.S
-index 99d6e95..111dba8 100644
+index 99d6e95ec55951d735587a39eae94d1c4c118228..111dba8ce0f487be658dd1017eff598a0437912f 100644
 --- a/src/arch/486/idt.S
 +++ b/src/arch/486/idt.S
 @@ -1,5 +1,20 @@
@@ -549,7 +549,7 @@ index 99d6e95..111dba8 100644
  	iret
  #endif
 diff --git a/src/arch/486/include/arch/pirq_routing.h b/src/arch/486/include/arch/pirq_routing.h
-index fed6d1e..57bfe3a 100644
+index fed6d1e3dae64cd5cd0e494b7a6900f800b15dd7..57bfe3a10984f71fdaf10d1f3faf7801f1bf3d71 100644
 --- a/src/arch/486/include/arch/pirq_routing.h
 +++ b/src/arch/486/include/arch/pirq_routing.h
 @@ -45,5 +45,6 @@ unsigned long copy_pirq_routing_table(unsigned long addr,
@@ -560,7 +560,7 @@ index fed6d1e..57bfe3a 100644
  
  #endif /* ARCH_PIRQ_ROUTING_H */
 diff --git a/src/arch/486/memlayout.ld b/src/arch/486/memlayout.ld
-index 9c1eeb0..8849022 100644
+index 9c1eeb054ff89fab70c0e2daeb185b9349a6b232..8849022ef85895c010b9c6303d3a1a461065f70d 100644
 --- a/src/arch/486/memlayout.ld
 +++ b/src/arch/486/memlayout.ld
 @@ -1,5 +1,14 @@
@@ -579,7 +579,7 @@ index 9c1eeb0..8849022 100644
  #include <arch/header.ld>
  
 diff --git a/src/arch/486/pirq_routing.c b/src/arch/486/pirq_routing.c
-index 9b2da4e..a5acb27 100644
+index 9b2da4e228a5c91726c50187df44e265f636b6f8..a5acb276cac632d6bffc9d0d51172f49fd04f4da 100644
 --- a/src/arch/486/pirq_routing.c
 +++ b/src/arch/486/pirq_routing.c
 @@ -115,6 +115,11 @@ static u8 pirq_get_next_free_irq(u8 *pirq, u16 bitmap)
@@ -603,7 +603,7 @@ index 9b2da4e..a5acb27 100644
  	pirq_tbl = (struct irq_routing_table *)(addr);
  	num_entries = (pirq_tbl->size - 32) / 16;
 diff --git a/src/console/Makefile.inc b/src/console/Makefile.inc
-index 4296426..b2093e8 100644
+index 4296426a0526bd0891901220f04601e8548b2926..b2093e8d2e5e56f72b41084025306924ba3b779a 100644
 --- a/src/console/Makefile.inc
 +++ b/src/console/Makefile.inc
 @@ -1,5 +1,5 @@
@@ -626,7 +626,7 @@ index 4296426..b2093e8 100644
  romstage-y += die.c
  
 diff --git a/src/cpu/486/bootblock.c b/src/cpu/486/bootblock.c
-index f6f29a6..a03f882 100644
+index f6f29a6c4ee9107dd0f36510825881f001166462..a03f88247886b86ad2681cf3cde95f892251fbb0 100644
 --- a/src/cpu/486/bootblock.c
 +++ b/src/cpu/486/bootblock.c
 @@ -8,6 +8,7 @@
@@ -674,7 +674,7 @@ index f6f29a6..a03f882 100644
  	// asm volatile(
  	// 	"mov %0, %%al\n\t"     // Move the character to AL register
 diff --git a/src/cpu/486/cache_as_ram.S b/src/cpu/486/cache_as_ram.S
-index 66a1ab6..c4ca32f 100644
+index 66a1ab6ede38dbedd2b3da1d7bf95ecab91b6369..c4ca32fca3c1c7114db319c0b172342d0e61397b 100644
 --- a/src/cpu/486/cache_as_ram.S
 +++ b/src/cpu/486/cache_as_ram.S
 @@ -1,8 +1,32 @@
@@ -922,7 +922,7 @@ index 66a1ab6..c4ca32f 100644
  pagetables_name:
  	.string "pagetables"
 diff --git a/src/cpu/486/entry16.S b/src/cpu/486/entry16.S
-index 071693b..c667a9a 100644
+index 071693b4aa2c8dc17402689319b595244c6c0161..c667a9af5bb1344cc1fe618da053fb744f9ddc68 100644
 --- a/src/cpu/486/entry16.S
 +++ b/src/cpu/486/entry16.S
 @@ -27,10 +27,27 @@
@@ -1129,7 +1129,7 @@ index 071693b..c667a9a 100644
  .globl nullidt
  nullidt:
 diff --git a/src/cpu/486/entry32.S b/src/cpu/486/entry32.S
-index 40595df..1719800 100644
+index 40595df05e3b3a61eb5b3c36ee44d45ecb27c90f..1719800c35d3f7b01fcaa4099fe391bbb1262958 100644
 --- a/src/cpu/486/entry32.S
 +++ b/src/cpu/486/entry32.S
 @@ -25,14 +25,23 @@
@@ -1167,7 +1167,7 @@ index 40595df..1719800 100644
  #if !CONFIG(USE_MARCH_586 || USE_MARCH_486)
  	/* MMX registers required here */
 diff --git a/src/cpu/486/exit_car.S b/src/cpu/486/exit_car.S
-index 1233b49..92b4480 100644
+index 1233b4985dc67608fcde412205fef8a74a47d26f..92b448015e696a1eb91f9624a01dfcabe3ac8ed1 100644
 --- a/src/cpu/486/exit_car.S
 +++ b/src/cpu/486/exit_car.S
 @@ -14,6 +14,15 @@
@@ -1203,7 +1203,7 @@ index 1233b49..92b4480 100644
 +	 * load a new ESP before it uses the stack. */
  	jmp	*%esp
 diff --git a/src/cpu/486/reset16.S b/src/cpu/486/reset16.S
-index 3858014..feb9277 100644
+index 38580146b449a5c40d765d30235b1209ba016eae..feb9277666e15b047363eef04d5244879a1a9a5a 100644
 --- a/src/cpu/486/reset16.S
 +++ b/src/cpu/486/reset16.S
 @@ -1,9 +1,25 @@
@@ -1233,7 +1233,7 @@ index 3858014..feb9277 100644
  	.int   _start16bit - ( . + 2 )
  	/* Note: The above jump is hand coded to work around bugs in binutils.
 diff --git a/src/include/console/console.h b/src/include/console/console.h
-index c69efcd..fede3fb 100644
+index c69efcde4069f7ffdd7acc944e451801c18bb3a8..fede3fb8acac525c6fb220f03980a9873a54460f 100644
 --- a/src/include/console/console.h
 +++ b/src/include/console/console.h
 @@ -44,7 +44,7 @@ static inline int get_console_loglevel(void)
@@ -1247,7 +1247,7 @@ index c69efcd..fede3fb 100644
  #if __CONSOLE_ENABLE__
 diff --git a/src/include/cpu/486/newbios_post.h b/src/include/cpu/486/newbios_post.h
 new file mode 100644
-index 0000000..07287a8
+index 0000000000000000000000000000000000000000..07287a8f6aa085b922ccf4ca095f330dea3904bf
 --- /dev/null
 +++ b/src/include/cpu/486/newbios_post.h
 @@ -0,0 +1,36 @@
@@ -1288,7 +1288,7 @@ index 0000000..07287a8
 +
 +#endif
 diff --git a/src/include/cpu/486/post_code.h b/src/include/cpu/486/post_code.h
-index 4cb6e14..0c5e144 100644
+index 4cb6e14b27a7cce08551f075fef69477aa051d34..0c5e144b3f02812451137cf52a343d90dd0dc373 100644
 --- a/src/include/cpu/486/post_code.h
 +++ b/src/include/cpu/486/post_code.h
 @@ -4,53 +4,15 @@
@@ -1351,7 +1351,7 @@ index 4cb6e14..0c5e144 100644
  #else
  #define post_init
 diff --git a/src/mainboard/biostar/mb8433/Makefile.inc b/src/mainboard/biostar/mb8433/Makefile.inc
-index 067135c..0966fef 100644
+index 067135c8edb68b785d8bea4f5160008304a9b43d..0966fef68c23075d4185afe9e505ae10d454dbad 100644
 --- a/src/mainboard/biostar/mb8433/Makefile.inc
 +++ b/src/mainboard/biostar/mb8433/Makefile.inc
 @@ -3,3 +3,5 @@ bootblock-y += bootblock.c
@@ -1361,7 +1361,7 @@ index 067135c..0966fef 100644
 +romstage-y += newbios.c
 +ramstage-y += newbios.c
 diff --git a/src/mainboard/biostar/mb8433/irq_tables.c b/src/mainboard/biostar/mb8433/irq_tables.c
-index 5775d51..d44d106 100644
+index 5775d519435e9b210737826dbc818eb427e96b0a..d44d1069b628256b6bf2813d03d079461e13b92e 100644
 --- a/src/mainboard/biostar/mb8433/irq_tables.c
 +++ b/src/mainboard/biostar/mb8433/irq_tables.c
 @@ -5,7 +5,8 @@
@@ -1376,7 +1376,7 @@ index 5775d51..d44d106 100644
  	PIRQ_SIGNATURE,
 diff --git a/src/mainboard/biostar/mb8433/newbios.c b/src/mainboard/biostar/mb8433/newbios.c
 new file mode 100644
-index 0000000..91d4d36
+index 0000000000000000000000000000000000000000..91d4d36f0d41b702edbcdb1542f7125e14815124
 --- /dev/null
 +++ b/src/mainboard/biostar/mb8433/newbios.c
 @@ -0,0 +1,107 @@
@@ -1489,7 +1489,7 @@ index 0000000..91d4d36
 +}
 diff --git a/src/mainboard/biostar/mb8433/newbios_cmos.h b/src/mainboard/biostar/mb8433/newbios_cmos.h
 new file mode 100644
-index 0000000..889dce8
+index 0000000000000000000000000000000000000000..889dce8454c510d3f787ea6d8ec75ba08b60d698
 --- /dev/null
 +++ b/src/mainboard/biostar/mb8433/newbios_cmos.h
 @@ -0,0 +1,56 @@
@@ -1550,7 +1550,7 @@ index 0000000..889dce8
 +
 +#endif
 diff --git a/src/northbridge/umc/um8881/bootblock.c b/src/northbridge/umc/um8881/bootblock.c
-index bd565a3..40add1f 100644
+index bd565a3acb8ca4fd5a117c06921a5810558b33eb..40add1f706c80e7c7a8b7018ca0e9e88744bb902 100644
 --- a/src/northbridge/umc/um8881/bootblock.c
 +++ b/src/northbridge/umc/um8881/bootblock.c
 @@ -12,10 +12,6 @@
@@ -1565,7 +1565,7 @@ index bd565a3..40add1f 100644
  	pci_update_config8(ISA_BRIDGE, IBC57_ROM_DECODE, ~0, 0x20);
  
 diff --git a/src/northbridge/umc/um8881/northbridge.c b/src/northbridge/umc/um8881/northbridge.c
-index 0bc85cc..2c3acc7 100644
+index 0bc85cc6eb0f391eecbaed5040be75f5807a593e..2c3acc744f3e208c6fc5b5da98934085099831b0 100644
 --- a/src/northbridge/umc/um8881/northbridge.c
 +++ b/src/northbridge/umc/um8881/northbridge.c
 @@ -269,8 +269,8 @@ void mp_init_cpus(struct bus *cpu_bus)
@@ -1580,7 +1580,7 @@ index 0bc85cc..2c3acc7 100644
  	//CSEG shadow
  	// printk(BIOS_INFO, "++++RAM++++ segment Call use RAM shadow\n");
 diff --git a/src/northbridge/umc/um8881/reg_init.h b/src/northbridge/umc/um8881/reg_init.h
-index 3cafb81..0fb90ce 100644
+index 3cafb81da5377ec0c3fa459d9afd377b3fbdb2d4..0fb90cebad5c21a2bc96ed126b7f33289176c8d5 100644
 --- a/src/northbridge/umc/um8881/reg_init.h
 +++ b/src/northbridge/umc/um8881/reg_init.h
 @@ -82,6 +82,8 @@ HB61=c4
@@ -1593,7 +1593,7 @@ index 3cafb81..0fb90ce 100644
  #define ISA_BRIDGE		PCI_DEV(0, 0x12, 0)
  #define IDE_CONTROLLER		PCI_DEV(0, 0x12, 1)
 diff --git a/src/northbridge/umc/um8881/romstage.c b/src/northbridge/umc/um8881/romstage.c
-index fc091da..277e7a4 100644
+index fc091da7f681c76ff1da4e55a83f06e88309d0c2..277e7a48f032cf85c2e62b122becc7a5f687d03c 100644
 --- a/src/northbridge/umc/um8881/romstage.c
 +++ b/src/northbridge/umc/um8881/romstage.c
 @@ -5,25 +5,51 @@
@@ -1719,7 +1719,7 @@ index fc091da..277e7a4 100644
 +	post_code(POST_UMC_LOAD_POSTCAR);
  }
 diff --git a/src/southbridge/umc/um8886/ide.c b/src/southbridge/umc/um8886/ide.c
-index bdff26f..8974cb5 100644
+index bdff26f6ef299c44c70d448e4eb72284f2c6d8c7..8974cb5bd0d75825c486ae428f1bd11f7b4a9541 100644
 --- a/src/southbridge/umc/um8886/ide.c
 +++ b/src/southbridge/umc/um8886/ide.c
 @@ -52,8 +52,8 @@ static const struct umc_cfg_entry ide_table[] = {
@@ -1734,7 +1734,7 @@ index bdff26f..8974cb5 100644
  
  	//NOTICE this won't boot .. check!!!!
 diff --git a/src/southbridge/umc/um8886/pirq.c b/src/southbridge/umc/um8886/pirq.c
-index a42b842..648a16d 100644
+index a42b842c46feec5e218740e20bc604c707108509..648a16deec63489f340ca9579f6d6320cb623f03 100644
 --- a/src/southbridge/umc/um8886/pirq.c
 +++ b/src/southbridge/umc/um8886/pirq.c
 @@ -18,9 +18,8 @@ void pirq_assign_irqs(const unsigned char route[CONFIG_MAX_PIRQ_LINKS])

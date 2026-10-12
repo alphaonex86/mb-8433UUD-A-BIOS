@@ -80,6 +80,6 @@ CONFIG_DEFAULT_CONSOLE_LOGLEVEL_8=y"
 fi
 
 git -C "$sb" add -N src
-git -C "$sb" diff > "$nb/patches/seabios.patch"
+git -C "$sb" diff --full-index > "$nb/patches/seabios.patch"
 git -C "$cb" add -N src/mainboard/biostar/mb8433 src/include/cpu/486/newbios_post.h
-git -C "$cb" diff > "$nb/patches/coreboot.patch"
+git -C "$cb" diff --full-index > "$nb/patches/coreboot.patch"

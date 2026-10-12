@@ -1,5 +1,5 @@
 diff --git a/Makefile b/Makefile
-index fe97d91b..12504ef3 100644
+index fe97d91b32ce5bbf8d2faeb373e22e0ac617f460..12504ef3ddf3748c7257b5c65998d75775486e94 100644
 --- a/Makefile
 +++ b/Makefile
 @@ -38,7 +38,7 @@ SRCBOTH=misc.c stacks.c output.c string.c block.c cdrom.c disk.c	\
@@ -12,7 +12,7 @@ index fe97d91b..12504ef3 100644
      hw/usb-xhci.c hw/usb-hub.c hw/sdcard.c fw/coreboot.c		\
      fw/lzmadecode.c fw/multiboot.c fw/csm.c fw/biostables.c		\
 diff --git a/src/Kconfig b/src/Kconfig
-index 3a8ffa15..1d1a80ff 100644
+index 3a8ffa15fded46a62de396ed49c77ee5eb9a1de7..1d1a80ff9ff099726ae9bdf0d44ab1c15b1168c1 100644
 --- a/src/Kconfig
 +++ b/src/Kconfig
 @@ -59,6 +59,13 @@ endchoice
@@ -30,7 +30,7 @@ index 3a8ffa15..1d1a80ff 100644
          depends on BOOTMENU
          bool "Graphical boot splash screen"
 diff --git a/src/apm.c b/src/apm.c
-index f7c2306c..b5fed604 100644
+index f7c2306c3d505f3a719499df054c1c68e47f191b..b5fed6046d2ba351a86861527ccc9c923099a282 100644
 --- a/src/apm.c
 +++ b/src/apm.c
 @@ -14,6 +14,8 @@
@@ -52,7 +52,7 @@ index f7c2306c..b5fed604 100644
          return;
      }
 diff --git a/src/block.c b/src/block.c
-index cd78688c..cad9780f 100644
+index cd78688c9962dcea39314940cc041297c3cc69fa..cad9780fde83352800b1c719c84048d2106bc146 100644
 --- a/src/block.c
 +++ b/src/block.c
 @@ -76,12 +76,18 @@ host_lchs_supplied(struct drive_s *drive)
@@ -76,7 +76,7 @@ index cd78688c..cad9780f 100644
      //TODO qemu?
      if (CONFIG_QEMU && type == DTYPE_ATA) {
 diff --git a/src/block.h b/src/block.h
-index 3af2d716..a612f94e 100644
+index 3af2d71674901fd7f33070bb474e88280503099e..a612f94e97e08785a48d47d26080f36b36e282a5 100644
 --- a/src/block.h
 +++ b/src/block.h
 @@ -107,6 +107,7 @@ struct drive_s {
@@ -88,7 +88,7 @@ index 3af2d716..a612f94e 100644
  extern u8 *bounce_buf_fl;
  struct drive_s *getDrive(u8 exttype, u8 extdriveoffset);
 diff --git a/src/boot.c b/src/boot.c
-index f1afa7a4..98f3bcb4 100644
+index f1afa7a498ece5c3d65d93906f5c9ec7d6d709f4..98f3bcb4fe08f46e0044d29e6514122b49c0d997 100644
 --- a/src/boot.c
 +++ b/src/boot.c
 @@ -518,17 +518,21 @@ boot_init(void)
@@ -177,7 +177,7 @@ index f1afa7a4..98f3bcb4 100644
      switch (ie->type) {
      case IPL_TYPE_FLOPPY:
 diff --git a/src/entryfuncs.S b/src/entryfuncs.S
-index 7368bb6d..b4480faa 100644
+index 7368bb6d56abdff66c9424de7924f22d2eefd2ce..b4480faadd109f29bb34f6a7b5e76122adf6a3e4 100644
 --- a/src/entryfuncs.S
 +++ b/src/entryfuncs.S
 @@ -4,6 +4,20 @@
@@ -269,7 +269,7 @@ index 7368bb6d..b4480faa 100644
          .section .text.asm.\func
          .global \func
 diff --git a/src/fw/shadow.c b/src/fw/shadow.c
-index 365936b9..599a0639 100644
+index 365936b9d80e33f4c10393ddb08ef64f53603fd4..599a063905d235162209ea4a5ea84fed9a0cd25f 100644
 --- a/src/fw/shadow.c
 +++ b/src/fw/shadow.c
 @@ -177,6 +177,30 @@ make_bios_writable_umc(void)
@@ -304,7 +304,7 @@ index 365936b9..599a0639 100644
  make_bios_readonly_umc(void)
  {
 diff --git a/src/hw/ata.c b/src/hw/ata.c
-index bdf4084f..fa57beb0 100644
+index bdf4084f9c63a78ca319218c439a91c885fb67cc..fa57beb01a5587794d9e1a6b43a1ba055cf33684 100644
 --- a/src/hw/ata.c
 +++ b/src/hw/ata.c
 @@ -22,6 +22,9 @@
@@ -452,7 +452,7 @@ index bdf4084f..fa57beb0 100644
  
      SET_BDA(disk_control_byte, 0xc0);
 diff --git a/src/hw/ata.h b/src/hw/ata.h
-index 9de24906..a69fdb8d 100644
+index 9de24906d8f2c508e1c38ae5e9fcf9777b79fea2..a69fdb8d2330f29195c88bbf5a5316141049c7c6 100644
 --- a/src/hw/ata.h
 +++ b/src/hw/ata.h
 @@ -20,6 +20,7 @@ struct atadrive_s {
@@ -464,7 +464,7 @@ index 9de24906..a69fdb8d 100644
  
  // ata.c
 diff --git a/src/hw/floppy.c b/src/hw/floppy.c
-index 14738d9f..426fb9ba 100644
+index 14738d9f39b2e8b7edb0a136c326c592f23bc7d6..426fb9ba198092cb70767e7efec08131f748fd33 100644
 --- a/src/hw/floppy.c
 +++ b/src/hw/floppy.c
 @@ -20,6 +20,7 @@
@@ -493,7 +493,7 @@ index 14738d9f..426fb9ba 100644
      } else {
          u8 type = romfile_loadint("etc/floppy0", 0);
 diff --git a/src/hw/ps2port.c b/src/hw/ps2port.c
-index 9b099e82..a3404518 100644
+index 9b099e827cb0bf3975066fdef63d86a035d3d604..a3404518c1218d5afed71e521a5d46332f93060b 100644
 --- a/src/hw/ps2port.c
 +++ b/src/hw/ps2port.c
 @@ -510,11 +510,9 @@ ps2_keyboard_setup(void *data)
@@ -511,7 +511,7 @@ index 9b099e82..a3404518 100644
      // Keyboard Mode: disable mouse, scan code convert, enable kbd IRQ
      Ps2ctr = (I8042_CTR_AUXDIS | I8042_CTR_XLATE
 diff --git a/src/hw/timer.c b/src/hw/timer.c
-index 7f9f4403..02a4b300 100644
+index 7f9f440342c5d1f204beef185c87e32ce9ecd7e3..02a4b300dbb5858046637a5bde78e42fad1e931a 100644
 --- a/src/hw/timer.c
 +++ b/src/hw/timer.c
 @@ -167,7 +167,7 @@ timer_adjust_bits(u32 value, u32 validbits)
@@ -524,7 +524,7 @@ index 7f9f4403..02a4b300 100644
  {
      u16 port = GET_GLOBAL(TimerPort);
 diff --git a/src/malloc.c b/src/malloc.c
-index 29ec22cc..e8be709c 100644
+index 29ec22ccc2a28981c52784d39edb19c55a9766bb..e8be709cce3f1d6e1b4a0c8fb210b95783dcb59f 100644
 --- a/src/malloc.c
 +++ b/src/malloc.c
 @@ -75,6 +75,21 @@ alloc_new(struct zone_s *zone, u32 size, u32 align, struct allocinfo_s *fill)
@@ -572,7 +572,7 @@ index 29ec22cc..e8be709c 100644
  	dprintf(1, "xyz %x %x\n", BUILD_LOWRAM_END, endlow);
  
 diff --git a/src/malloc.h b/src/malloc.h
-index 7d702d16..f8ffc768 100644
+index 7d702d161f597f222f5271f7682e5da27689a9b1..f8ffc7680e1cb2da2f536b77c559f8dfff283f58 100644
 --- a/src/malloc.h
 +++ b/src/malloc.h
 @@ -9,6 +9,7 @@ u32 rom_get_max(void);
@@ -585,7 +585,7 @@ index 7d702d16..f8ffc768 100644
  int rom_confirm(u32 size);
 diff --git a/src/newbios_cmos.h b/src/newbios_cmos.h
 new file mode 100644
-index 00000000..889dce84
+index 0000000000000000000000000000000000000000..889dce8454c510d3f787ea6d8ec75ba08b60d698
 --- /dev/null
 +++ b/src/newbios_cmos.h
 @@ -0,0 +1,56 @@
@@ -646,7 +646,7 @@ index 00000000..889dce84
 +
 +#endif
 diff --git a/src/optionroms.c b/src/optionroms.c
-index dcc0cff8..06ecd337 100644
+index dcc0cff8b24758e7bfae8cfd77fde39a9c40c63a..06ecd3378d05b8498f51a2e5489c7624e4f10dc4 100644
 --- a/src/optionroms.c
 +++ b/src/optionroms.c
 @@ -30,6 +30,9 @@ static int EnforceChecksum, S3ResumeVga, RunPCIroms;
@@ -788,7 +788,7 @@ index dcc0cff8..06ecd337 100644
          struct rom_header *rom = map_pcirom(pci);
          if (!rom)
 diff --git a/src/post.c b/src/post.c
-index f267666c..957e7876 100644
+index f267666c9beb50c84ab9fdea74604c270d1c8659..957e78765e6f95a897cf9c7e5fb33d8951b6418b 100644
 --- a/src/post.c
 +++ b/src/post.c
 @@ -94,17 +94,16 @@ bda_init(void)
@@ -876,7 +876,7 @@ index f267666c..957e7876 100644
      // Detect ram and setup internal malloc.
      qemu_preinit();
 diff --git a/src/resume.c b/src/resume.c
-index 559eac64..72c5c9d8 100644
+index 559eac645ade5472db79692adb9865d883eb4c63..72c5c9d831249a6884e161b17228a3ee9db888c4 100644
 --- a/src/resume.c
 +++ b/src/resume.c
 @@ -16,6 +16,7 @@
@@ -910,7 +910,7 @@ index 559eac64..72c5c9d8 100644
      // Try triple fault
      // asm volatile("int3");
 diff --git a/src/romlayout.S b/src/romlayout.S
-index bdbb72c7..a8cd64cc 100644
+index bdbb72c7a0ea265d2537933c735d5615c6a025bb..a8cd64ccf2874692a54313f0b66245ab3561fffb 100644
 --- a/src/romlayout.S
 +++ b/src/romlayout.S
 @@ -5,6 +5,24 @@
@@ -1368,7 +1368,7 @@ index bdbb72c7..a8cd64cc 100644
  reset_vector:
 diff --git a/src/setup.c b/src/setup.c
 new file mode 100644
-index 00000000..b3ee31e2
+index 0000000000000000000000000000000000000000..b3ee31e23a57f71cfab82473d4e47825a167c29f
 --- /dev/null
 +++ b/src/setup.c
 @@ -0,0 +1,2329 @@
@@ -3702,7 +3702,7 @@ index 00000000..b3ee31e2
 +    post_code(POST_SETUP);
 +}
 diff --git a/src/util.h b/src/util.h
-index 9226bd13..836a1c9b 100644
+index 9226bd135295ae9535bb9f23d57753c940f11250..836a1c9bc9d913170ff68288e6b97a667d07c5ca 100644
 --- a/src/util.h
 +++ b/src/util.h
 @@ -48,6 +48,35 @@ int boot_lchs_find_scsi_device(struct pci_device *pci, int target, int lun,
