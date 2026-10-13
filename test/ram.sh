@@ -17,9 +17,10 @@ if [ $# -eq 0 ]; then
 5 5 5 5 0 1 131072 none 00 66 0f 00
 8 0 0 0 1024 1 65536 1024K 05 06 00 10
 0 1 0 0 256 1 4096 256K 03 02 10 00
+3 3 0 0 256 1 32768 256K 03 05 01 00
 EOF
   vm_name=ram
-  [ "$(grep -c '^PASS' "$vm_dir/all.log")" = 9 ] || { cat "$vm_dir/all.log"; fail "see above"; }
+  [ "$(grep -c '^PASS' "$vm_dir/all.log")" = 10 ] || { cat "$vm_dir/all.log"; fail "see above"; }
   echo "PASS [ram]"
   exit 0
 fi

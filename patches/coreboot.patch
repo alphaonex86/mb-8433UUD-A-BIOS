@@ -1,3 +1,21 @@
+diff --git a/payloads/Kconfig b/payloads/Kconfig
+index 3c51f783db21925b90363a499dda75736912b620..734fdce75e73977ac3bd431909e58f61aa808452 100644
+--- a/payloads/Kconfig
++++ b/payloads/Kconfig
+@@ -72,6 +72,13 @@ config COMPRESSED_PAYLOAD_LZMA
+ 	  In order to reduce the size payloads take up in the ROM chip
+ 	  coreboot can compress them using the LZMA algorithm.
+ 
++config PAYLOAD_BCJ_X86
++	bool "Payload segments are x86 BCJ filtered before compression"
++	depends on COMPRESSED_PAYLOAD_LZMA
++	help
++	  The payload ELF was filtered with the x86 BCJ filter of xz (start offset 0) before it was
++	  added; segments are unfiltered after LZMA decompression. About 4% smaller x86 code.
++
+ config COMPRESSED_PAYLOAD_LZ4
+ 	bool "Use LZ4 compression for payloads"
+ 	help
 diff --git a/src/arch/486/assembly_entry.S b/src/arch/486/assembly_entry.S
 index 7f4cd5d34f0ce4791304e4b6fe37470e67d2d392..b96c258b62f928186d51dec0c1697b8dc8de8ada 100644
 --- a/src/arch/486/assembly_entry.S
@@ -1742,6 +1760,20 @@ index 4cb6e14b27a7cce08551f075fef69477aa051d34..0c5e144b3f02812451137cf52a343d90
  
  #else
  #define post_init
+diff --git a/src/include/lib.h b/src/include/lib.h
+index 863888e16ba3422e33c96a89ff469a5a187b12a9..373304116ca457d7f195cfdfc6650e8f807797fa 100644
+--- a/src/include/lib.h
++++ b/src/include/lib.h
+@@ -10,6 +10,9 @@
+ /* Defined in src/lib/lzma.c. Returns decompressed size or 0 on error. */
+ size_t ulzman(const void *src, size_t srcn, void *dst, size_t dstn);
+ 
++/* Undo the xz x86 BCJ filter (start offset 0) in place. */
++void bcj_x86_decode(uint8_t *buf, size_t size);
++
+ /* Defined in src/lib/ramtest.c */
+ /* Assumption is 32-bit addressable UC memory. */
+ void ram_check(uintptr_t start);
 diff --git a/src/lib/Kconfig b/src/lib/Kconfig
 index 23647947a4fc75bb3b68ad77163721dd8c198db6..c9b3af013e341036b7c5a74fa96a6925ce3865ef 100644
 --- a/src/lib/Kconfig
@@ -1755,6 +1787,26 @@ index 23647947a4fc75bb3b68ad77163721dd8c198db6..c9b3af013e341036b7c5a74fa96a6925
  	depends on COMPILER_GCC
  	default y
  	help
+diff --git a/src/lib/Makefile.inc b/src/lib/Makefile.inc
+index d91ba76fc5db45fe1f2bc2dcc58d75699652c7fc..638d94fcb308fa7e583b2b59420219b170a7242a 100644
+--- a/src/lib/Makefile.inc
++++ b/src/lib/Makefile.inc
+@@ -109,6 +109,7 @@ romstage-y += region_file.c
+ ramstage-y += romstage_handoff.c
+ romstage-y += romstage_handoff.c
+ romstage-y += selfboot.c
++romstage-$(CONFIG_PAYLOAD_BCJ_X86) += bcj_x86.c
+ romstage-y += stack.c
+ romstage-y += rtc.c
+ ramstage-y += rtc.c
+@@ -133,6 +134,7 @@ ramstage-y += prog_loaders.c
+ ramstage-y += prog_ops.c
+ ramstage-y += hardwaremain.c
+ ramstage-y += selfboot.c
++ramstage-$(CONFIG_PAYLOAD_BCJ_X86) += bcj_x86.c
+ ramstage-y += coreboot_table.c
+ ramstage-y += bootmem.c
+ #ramstage-y += fmap.c
 diff --git a/src/lib/bootblock.c b/src/lib/bootblock.c
 index bcd7cac4653fdb38f5386ff5967867e012ea50ae..a7248953e37548edb22a52b16635834a80583f9b 100644
 --- a/src/lib/bootblock.c
@@ -1787,6 +1839,19 @@ index a9f47af23bc84fd5410c4fa1e444f523598190d1..31144f954907633a9f1381486a629b1c
  
  	memcpy(module->location, module->payload, module->payload_size);
  }
+diff --git a/src/lib/selfboot.c b/src/lib/selfboot.c
+index 7a6d328cf41acac81707d8c165494cef7d318817..95c6ff8b55640f863980e755ac5abff3391a243e 100644
+--- a/src/lib/selfboot.c
++++ b/src/lib/selfboot.c
+@@ -113,6 +113,8 @@ printk(BIOS_DEBUG, "tmp 0:%02hhx 1:%02hhx 2:%02hhx 3:%02hhx\n",
+ 		timestamp_add_now(TS_ULZMA_END);
+ 		if (!len) /* Decompression Error. */
+ 			return 0;
++		if (CONFIG(PAYLOAD_BCJ_X86))
++			bcj_x86_decode(dest, len);
+ 		break;
+ 	}
+ 	case CBFS_COMPRESS_LZ4: {
 diff --git a/src/mainboard/biostar/mb8433/Makefile.inc b/src/mainboard/biostar/mb8433/Makefile.inc
 index 067135c8edb68b785d8bea4f5160008304a9b43d..0966fef68c23075d4185afe9e505ae10d454dbad 100644
 --- a/src/mainboard/biostar/mb8433/Makefile.inc
@@ -1857,10 +1922,10 @@ index cdee25bf7b472e92238defb7432a7891ef4bff75..f648216b7eccca8db4f166f17566319c
  struct chip_operations mainboard_ops = {
 diff --git a/src/mainboard/biostar/mb8433/newbios.c b/src/mainboard/biostar/mb8433/newbios.c
 new file mode 100644
-index 0000000000000000000000000000000000000000..e84420450bba91a19fb9818aaf6f685ec8fc148c
+index 0000000000000000000000000000000000000000..7740150563112a63afe5505d7b2525125e46524f
 --- /dev/null
 +++ b/src/mainboard/biostar/mb8433/newbios.c
-@@ -0,0 +1,165 @@
+@@ -0,0 +1,194 @@
 +/* SPDX-License-Identifier: GPL-2.0-only */
 +
 +/*
@@ -1942,6 +2007,10 @@ index 0000000000000000000000000000000000000000..e84420450bba91a19fb9818aaf6f685e
 +{
 +	u8 fails = cmos_read(NB_CMOS_BOOTFAIL);
 +
++	/* a full POST: no CPU-only reset may jump to the shadow RAM before SeaBIOS is loaded there
++	   (bootblock checks 0Fh; a dead CMOS battery leaves garbage in it) */
++	cmos_write(0, 0x0f);
++
 +	cmos_write(fails < 0xff ? fails + 1 : fails, NB_CMOS_BOOTFAIL);
 +	if (!settings_valid())
 +		return;
@@ -1962,7 +2031,8 @@ index 0000000000000000000000000000000000000000..e84420450bba91a19fb9818aaf6f685e
 +	apply(chipset, ARRAY_SIZE(chipset));
 +}
 +
-+/* Core clock in MHz: dec + taken jnz is 4 clocks on 486-class CPUs, timed with PIT channel 2. */
++/* Core clock in MHz: dec + taken jnz is 4 clocks on 486-class CPUs, timed with PIT channel 2. The loop is
++   16-byte aligned: unaligned it took 4-5 clocks (107-121 MHz on the 133 MHz board: auto timings of a 25 MHz bus). */
 +static unsigned int cpu_mhz(void)
 +{
 +	u32 n = 200000;
@@ -1971,10 +2041,29 @@ index 0000000000000000000000000000000000000000..e84420450bba91a19fb9818aaf6f685e
 +	outb(0xb0, 0x43);
 +	outb(0xff, 0x42);
 +	outb(0xff, 0x42);
-+	asm volatile("1: decl %0; jnz 1b" : "+r"(n));
++	asm volatile(".align 16\n1: decl %0; jnz 1b" : "+r"(n));
 +	outb(0x80, 0x43);
-+	u32 ticks = 0xffff - (inb(0x42) | inb(0x42) << 8);
++	u32 ticks = inb(0x42);
++	ticks = 0xffff - (ticks | inb(0x42) << 8);
 +	return ticks ? (954545 + ticks / 2) / ticks : 0;	/* 800000 clocks at 1.193182 MHz */
++}
++
++/* The core clock is mhz +- 4% of a standard bus clock (25, 33.3, 40, 50 MHz) times m. */
++static int standard_bus(unsigned int mhz, unsigned int m)
++{
++	static const unsigned int bus10[] = { 250, 333, 400, 500 };	/* in 0.1 MHz */
++
++	for (unsigned int i = 0; i < ARRAY_SIZE(bus10); i++)
++		if (mhz * 10 * 25 >= bus10[i] * m * 24 && mhz * 10 * 25 <= bus10[i] * m * 26)
++			return 1;
++	return 0;
++}
++
++/* Am5x86: 4x or 3x (CLKMUL pin, not visible to software). 3x (the faster bus, slower timings) unless only
++   4x gives a standard bus clock: 133 = 4 x 33 and 160 = 4 x 40, but 100, 120, 150 and odd clocks are 3x. */
++static unsigned int am5x86_multiplier(unsigned int mhz)
++{
++	return standard_bus(mhz, 4) && !standard_bus(mhz, 3) ? 4 : 3;
 +}
 +
 +/* Core/bus clock ratio from the family and model (CPUID, else DX at reset); 1 if unknown, which
@@ -1988,7 +2077,7 @@ index 0000000000000000000000000000000000000000..e84420450bba91a19fb9818aaf6f685e
 +	switch (sig & 0x0f) {
 +	case 3: case 5: case 7: return mhz > 85 ? 3 : 2;	/* DX2, SX2, DX2 write-back */
 +	case 8: case 9: return 3;		/* DX4 */
-+	case 14: case 15: return 4;		/* Am5x86 */
++	case 14: case 15: return am5x86_multiplier(mhz);
 +	}
 +	return 1;
 +}
@@ -2009,7 +2098,7 @@ index 0000000000000000000000000000000000000000..e84420450bba91a19fb9818aaf6f685e
 +	if (settings_valid() && !setting(NB_CHIPSET_AUTO)
 +	    && cmos_read(NB_CMOS_BOOTFAIL) - 1 < NB_BOOTFAIL_MAX)
 +		return;		/* the manual values of setup are in use */
-+	for (i = 0; bus >= rows[i].bus_below; i++)
++	for (i = 0; i < ARRAY_SIZE(rows) - 1 && bus >= rows[i].bus_below; i++)
 +		;
 +	printk(BIOS_INFO, "newBIOS: %u MHz bus, auto chipset timings %u\n", bus, i);
 +	pci_update_config8(HOST_BRIDGE, HB50_L2_CFG_0, ~0x30, rows[i].hb50);
@@ -2018,20 +2107,25 @@ index 0000000000000000000000000000000000000000..e84420450bba91a19fb9818aaf6f685e
 +	pci_update_config8(ISA_BRIDGE, IBCA4_CLOCK_RATIO, ~0x03, rows[i].ibca4);
 +}
 +
-+/* Ramstage PIRQ routing: links INTA#-INTD# set in setup keep their IRQ. */
++/* Ramstage PIRQ routing: links INTA#-INTD# set in setup keep their IRQ, if it is one setup offers
++   (3, 4, 5, 7, 9-12, 14, 15 as the original BIOS); anything else is routed automatically. */
++#define SETUP_PCI_IRQS 0xdeb8
++
 +void mainboard_pirq_preset(unsigned char *pirq)
 +{
 +	if (!settings_valid())
 +		return;
-+	for (int i = 0; i < 4; i++)
-+		pirq[i] = setting(NB_PCI_IRQ_A + i);
++	for (int i = 0; i < 4; i++) {
++		u8 irq = setting(NB_PCI_IRQ_A + i);
++		pirq[i] = (SETUP_PCI_IRQS >> irq) & 1 ? irq : 0;
++	}
 +}
 diff --git a/src/mainboard/biostar/mb8433/newbios_cmos.h b/src/mainboard/biostar/mb8433/newbios_cmos.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..e1eb9074f2abeb7417eac5141966b4b9e3ce3821
+index 0000000000000000000000000000000000000000..24be7dc2708284bbdee9d38361a7288aca957b6e
 --- /dev/null
 +++ b/src/mainboard/biostar/mb8433/newbios_cmos.h
-@@ -0,0 +1,63 @@
+@@ -0,0 +1,66 @@
 +/*
 + * newBIOS CMOS layout, shared by SeaBIOS (setup utility, POST options) and coreboot (chipset options).
 + * build.sh copies this file into both trees. One nibble per setting: index i is in byte
@@ -2040,6 +2134,9 @@ index 0000000000000000000000000000000000000000..e1eb9074f2abeb7417eac5141966b4b9
 +#ifndef NEWBIOS_CMOS_H
 +#define NEWBIOS_CMOS_H
 +
++#define NB_CMOS_L2        0x3e   /* L2 size and bank bits found by coreboot (UM8881 50h & 0Fh); L2 stays off until SeaBIOS;
++                                    bit 7: SeaBIOS is enabling the L2 (still set at the next POST: that hung);
++                                    bits 6-4: its step then (setup.c L2StepNames) */
 +#define NB_CMOS_BASE      0x40
 +#define NB_CMOS_HDD       0x62   /* 4 x 5 bytes per IDE drive: type, user cylinders (16-bit), heads, sectors */
 +#define NB_CMOS_PASSWORD  0x78   /* 16-bit hash, 0 = no password */
@@ -2125,6 +2222,70 @@ index 0bc85cc6eb0f391eecbaed5040be75f5807a593e..2c3acc744f3e208c6fc5b5da98934085
  
  	//CSEG shadow
  	// printk(BIOS_INFO, "++++RAM++++ segment Call use RAM shadow\n");
+diff --git a/src/northbridge/umc/um8881/raminit.c b/src/northbridge/umc/um8881/raminit.c
+index 393f796b5499347d6bcc74b2880aa7432b52e61c..9b7d06d4f94d0045b7e728b69949f1e03b3cd061 100644
+--- a/src/northbridge/umc/um8881/raminit.c
++++ b/src/northbridge/umc/um8881/raminit.c
+@@ -11,8 +11,11 @@
+ #include <arch/io.h>
+ #include <device/pci_ops.h>
+ #include <cbmem.h>
++#include <commonlib/helpers.h>
+ 
+ #include "reg_init.h"
++#include <pc80/mc146818rtc.h>
++#include <mainboard/biostar/mb8433/newbios_cmos.h>
+ 
+ void dram_init(void);
+ void l2_cache_init(void);
+@@ -389,6 +392,13 @@ void unify_banks_to_region(
+ 		result->two_banks = false;
+ 		result->use_upper = true;
+ 		result->require_ma11 = (upper->rows == 12)?true:false;
++	} else if (result_size > 128*MiB) {
++		// a region holds at most 128 MiB: use the lower bank alone
++		result->totalsize_reg_val = bank_size_to_region_size(lower_size_original);
++		result->double_sided = lower->double_sided;
++		result->two_banks = false;
++		result->use_upper = false;
++		result->require_ma11 = (lower->rows == 12)?true:false;
+ 	} else {
+ // printk(BIOS_DEBUG, "use combined banks\n");
+ 
+@@ -523,28 +533,11 @@ void l2_cache_init(void)
+ 	//disable forced hit
+ 	pci_update_config8(HOST_BRIDGE, HB5A_MISC_0, ~0x40, 0);
+ 
+-	if (cache_size > 0) {
+-		//if L2 cache enabled, initialize (random poweron data)
+-
+-// //experimental
+-// pci_update_config8(HOST_BRIDGE, HB5A_MISC_0, ~0, 0x40);
+-
+-		printk(BIOS_DEBUG, "Init L2 to be coherent with RAM: ");
+-
+-#if 0
+-		//read twice L2 size
+-		for (uintptr_t addr = 0x200000; addr < 0x200000 + cache_size*2; addr+=4) {
+-			if ((addr % 0x10000) == 0) {
+-				printk(BIOS_DEBUG, "%6lx ", addr);
+-			}
+-
+-			read32p(addr);
+-			// write32p(addr, addr);
+-		}
+-		printk(BIOS_DEBUG, "\n");
+-#endif
+-
+-	}
++	//the size is handed to SeaBIOS, which makes the tags valid and enables it at POST like the original
++	//BIOS; until then 50h is 0 (with only bit 7 off, or enabled under cache-as-RAM, the real board crashed)
++	u8 l2_cmos = cmos_read(NB_CMOS_L2);	//bits 7, 6-4: a SeaBIOS L2 init that did not finish, its step
++	cmos_write((l2_cmos & 0x80 ? l2_cmos & 0xf0 : 0) | (pci_read_config8(HOST_BRIDGE, HB50_L2_CFG_0) & 0x0f), NB_CMOS_L2);
++	pci_write_config8(HOST_BRIDGE, HB50_L2_CFG_0, 0);
+ 
+ 	//NOTICE INVD is run in exit_car.S
+ 	//NOTICE if there are stale data/code in L2 cache, after enabling there will be random crashes
 diff --git a/src/northbridge/umc/um8881/reg_init.h b/src/northbridge/umc/um8881/reg_init.h
 index 3cafb81da5377ec0c3fa459d9afd377b3fbdb2d4..d0def3e0f970dde5b2718008f9e584c057679eeb 100644
 --- a/src/northbridge/umc/um8881/reg_init.h
@@ -2140,7 +2301,7 @@ index 3cafb81da5377ec0c3fa459d9afd377b3fbdb2d4..d0def3e0f970dde5b2718008f9e584c0
  #define ISA_BRIDGE		PCI_DEV(0, 0x12, 0)
  #define IDE_CONTROLLER		PCI_DEV(0, 0x12, 1)
 diff --git a/src/northbridge/umc/um8881/romstage.c b/src/northbridge/umc/um8881/romstage.c
-index fc091da7f681c76ff1da4e55a83f06e88309d0c2..0425ea73f951b7e8eee459f9365078881b2cbd80 100644
+index fc091da7f681c76ff1da4e55a83f06e88309d0c2..c505c0b097093be2b15168caf059e933984c67b2 100644
 --- a/src/northbridge/umc/um8881/romstage.c
 +++ b/src/northbridge/umc/um8881/romstage.c
 @@ -5,25 +5,51 @@
@@ -2200,7 +2361,7 @@ index fc091da7f681c76ff1da4e55a83f06e88309d0c2..0425ea73f951b7e8eee459f936507888
  
  	{HB54_SHADOW_EN,		0xff,	0x00},
  	{HB55_SHADOW_CFG,		0xff,	0x40},	//readonly
-@@ -38,8 +64,7 @@ static const struct umc_cfg_entry hb_init_table[] = {
+@@ -38,12 +64,44 @@ static const struct umc_cfg_entry hb_init_table[] = {
  	//5e-5f unknown, implemented
  	{HB60_SMRAM_2,			0xff,	0x00},
  
@@ -2210,7 +2371,44 @@ index fc091da7f681c76ff1da4e55a83f06e88309d0c2..0425ea73f951b7e8eee459f936507888
  	{HB62_BURST,			0xff,	0x01},
  };
  
-@@ -54,6 +79,7 @@ void mainboard_romstage_entry(void)
+ 
++/*
++ * Fill the E and F segment shadow RAM like the original BIOS: from code in DRAM with the source in DRAM,
++ * never writing E0000-FFFFF while running from the flash (romstage runs from the E segment).
++ */
++#define SHADOW_CODE	0x90000
++
++extern const char shadow_fill_start[], shadow_fill_end[];
++
++asm(".section .text.shadow_fill, \"ax\", @progbits\n"
++    "shadow_fill_start:\n"
++    "	pushl	%esi\n"
++    "	pushl	%edi\n"
++    "	cld\n"
++    "	movl	$0xfffe0000, %esi\n"
++    "	movl	$0x100000, %edi\n"
++    "	movl	$0x8000, %ecx\n"
++    "	rep movsl\n"
++    "	movl	$0x100000, %esi\n"
++    "	movl	$0xe0000, %edi\n"
++    "	movl	$0x8000, %ecx\n"
++    "	rep movsl\n"
++    "	popl	%edi\n"
++    "	popl	%esi\n"
++    "	ret\n"
++    "shadow_fill_end:\n"
++    ".previous\n");
++
++static void shadow_fill_ef(void)
++{
++	memcpy((void *)SHADOW_CODE, shadow_fill_start, shadow_fill_end - shadow_fill_start);
++	((void (*)(void))SHADOW_CODE)();
++}
++
+ void dram_init(void);
+ void l2_cache_init(void);
+ void um8886_early_init(void);
+@@ -54,6 +112,7 @@ void mainboard_romstage_entry(void)
  	printk(BIOS_DEBUG, "mainboard romstage\n");
  
  	//init HB registers
@@ -2218,7 +2416,7 @@ index fc091da7f681c76ff1da4e55a83f06e88309d0c2..0425ea73f951b7e8eee459f936507888
  	umc_registers_init(
  		HOST_BRIDGE,
  		hb_init_table,
-@@ -61,10 +87,15 @@ void mainboard_romstage_entry(void)
+@@ -61,10 +120,15 @@ void mainboard_romstage_entry(void)
  	);
  	//TODO make some configurable from CMOS
  
@@ -2234,7 +2432,7 @@ index fc091da7f681c76ff1da4e55a83f06e88309d0c2..0425ea73f951b7e8eee459f936507888
  	l2_cache_init();
  
  	//NOTICE L2 is configured and enabled now
-@@ -73,8 +104,12 @@ void mainboard_romstage_entry(void)
+@@ -73,8 +137,12 @@ void mainboard_romstage_entry(void)
  
  	printk(BIOS_INFO, "RAM size %lu kiB\n", cbmem_top_chipset()/KiB);
  
@@ -2247,21 +2445,23 @@ index fc091da7f681c76ff1da4e55a83f06e88309d0c2..0425ea73f951b7e8eee459f936507888
  /*
  	printk(BIOS_DEBUG, "Erase high RAM\n");
  	for (uintptr_t addr = 128*MiB - 1*MiB; addr < 128*MiB; addr+=4) {
-@@ -87,31 +122,26 @@ void mainboard_romstage_entry(void)
+@@ -87,31 +155,23 @@ void mainboard_romstage_entry(void)
  	//move raminit to bootblock?
  
  	//disable write protect
 +	post_code(POST_UMC_SHADOW);
  	pci_update_config8(HOST_BRIDGE, HB55_SHADOW_CFG, ~0x40, 0);
  
- 	//copy ROME to shadowE
+-	//copy ROME to shadowE
 -	printk(BIOS_INFO, "TODO? fill shadow E\n");
- 	//NOTICE when disabled, L2 will cause crashes ... may interference with L2 fill in a good way
- 	memcpy((void*)0xe0000, (void*)0xfffe0000, 0x10000);
+-	//NOTICE when disabled, L2 will cause crashes ... may interference with L2 fill in a good way
+-	memcpy((void*)0xe0000, (void*)0xfffe0000, 0x10000);
++	//copy the flash (E and F) to shadow E and F
++	shadow_fill_ef();
  
- 	//copy ROMF to shadowF
+-	//copy ROMF to shadowF
 -	printk(BIOS_INFO, "TODO? fill shadow F\n");
- 	// memcpy((void*)0xf0000, (void*)0xffff0000, 0x10000);
+-	// memcpy((void*)0xf0000, (void*)0xffff0000, 0x10000);
  
  	//CSEG shadow
 -	printk(BIOS_INFO, "++++ROM++++ segment C use RAM shadow\n");
@@ -2280,7 +2480,7 @@ index fc091da7f681c76ff1da4e55a83f06e88309d0c2..0425ea73f951b7e8eee459f936507888
  	pci_update_config8(HOST_BRIDGE, HB55_SHADOW_CFG, ~0, 0x80);
  
  
-@@ -119,7 +149,6 @@ void mainboard_romstage_entry(void)
+@@ -119,7 +179,6 @@ void mainboard_romstage_entry(void)
  
  	//NOTICE NOTICE NOTICE NOTICE experiments
  	//set if pci video bios installed?
@@ -2288,7 +2488,7 @@ index fc091da7f681c76ff1da4e55a83f06e88309d0c2..0425ea73f951b7e8eee459f936507888
  	pci_update_config8(ISA_BRIDGE, IBC50_PCI_VIDEO, ~0, 0x80);
  
  	pci_update_config8(ISA_BRIDGE, IBC50_PCI_VIDEO, ~0, 1);
-@@ -159,7 +188,9 @@ void mainboard_romstage_entry(void)
+@@ -159,7 +218,9 @@ void mainboard_romstage_entry(void)
  
  // printk(BIOS_DEBUG, "cbmem_initialize {\n");
  

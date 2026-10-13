@@ -15,10 +15,11 @@ ram_cfg() {  # SIMM types of banks 0-3 (0 empty, see umc_hb4.c), L2 KB, L2 banks
 }
 
 vm_start() {  # name, rom, extra config lines; RAM: $vm_ram (default 32 MB in bank 0, 256 KB L2),
-              # CPU: $vm_cpu_family/speed/multi (default Am5x86-133)
+              # CPU: $vm_cpu_family/speed/multi (default Am5x86-133), $vm_dynarec (0: interpreter)
   vm_name=$1
   vm=$vm_dir
   rm -rf "$vm/nvr" "$vm/post.log"   # fresh CMOS and flash, POST codes of this boot only
+  [ -z "${vm_nvr:-}" ] || { mkdir -p "$vm/nvr"; cp "$vm_nvr" "$vm/nvr/84xxuuda.nvr"; }   # given CMOS contents
   mkdir -p "$vm/roms/machines/84xxuuda"
   cp "$2" "$vm/roms/machines/84xxuuda/uud0520s.bin"   # -R paths are searched before the default ROM set
   cat > "$vm/86box.cfg" <<EOF
@@ -27,7 +28,7 @@ machine = 84xxuuda
 cpu_family = ${vm_cpu_family:-am5x86}
 cpu_speed = ${vm_cpu_speed:-133333333}
 cpu_multi = ${vm_cpu_multi:-4}
-cpu_use_dynarec = 1
+cpu_use_dynarec = ${vm_dynarec:-1}
 fpu_type = internal
 mem_size = 131072
 time_sync = disabled
@@ -65,9 +66,9 @@ vm_cmd() { echo "$*" >&"$vm_ctl"; }
 vm_screen() {  # refresh $vm/screen.txt from the emulated text screen
   rm -f "$vm/screen.txt"
   vm_cmd text "$vm/screen.txt"
-  for _ in $(seq 50); do [ -f "$vm/screen.txt" ] && return 0; sleep 0.1; done
+  for _ in $(seq 300); do [ -f "$vm/screen.txt" ] && return 0; sleep 0.1; done   # 30 s: the full suite loads every core
   kill -0 "$vm_pid" 2>/dev/null || fail "86Box exited (see $vm/86box.log)"
-  fail "no screen dump"
+  fail "no screen dump in 30 s"
 }
 
 vm_wait_text() {  # extended regex, timeout seconds
@@ -81,6 +82,26 @@ vm_wait_text() {  # extended regex, timeout seconds
 }
 
 vm_expect() { vm_screen; grep -Eq "$1" "$vm/screen.txt" || fail "screen lacks /$1/"; }
+
+vm_shot() {  # -> the path of a new screenshot (graphics modes: the text dump cannot read them)
+  local before n
+  before=$(ls "$vm/screenshots" 2>/dev/null | wc -l)
+  vm_cmd shot
+  for _ in $(seq 100); do
+    n=$(ls "$vm/screenshots" 2>/dev/null | wc -l)
+    [ "$n" -gt "$before" ] && { sleep 0.5; ls -t "$vm/screenshots"/*.png | head -1; return; }
+    sleep 0.1
+  done
+  fail "no screenshot"
+}
+
+vm_ocr() {  # -> $vm/ocr.txt: the screen's text by the local tesseract OCR (test/bench/ocr.py), no AI involved
+  "$nb/test/bench/ocr.py" "$(vm_shot)" > "$vm/ocr.txt" || fail "OCR failed"
+}
+
+vm_ocr_expect() {  # extended regex the OCR text must show
+  grep -Eq "$1" "$vm/ocr.txt" || { cat "$vm/ocr.txt" >&2; fail "OCR text lacks /$1/"; }
+}
 
 vm_key() { for k; do vm_cmd key "$k"; sleep 0.2; done; }   # set 1 scan codes (hex), typed one by one
 
@@ -105,27 +126,6 @@ dos_disk() {  # path, [extra file] -> FreeDOS 1.3 disk whose FDAUTO.BAT runs ver
   [ -z "${2:-}" ] || mcopy -o -i "$1@@$part" "$2" "::/$(basename "$2")"
   printf '@echo off\r\nSET DOSDIR=\\FREEDOS\r\nSET PATH=%%DOSDIR%%\\BIN\r\nver\r\nmem\r\n%s\r\necho DOS-TEST-OK\r\n' \
     "$(basename "${2:-rem}" .com)" | mcopy -o -i "$1@@$part" - ::/FDAUTO.BAT
-}
-
-scsi_dos_disk() {  # path -> minimal FreeDOS disk partitioned for the 64 heads/32 sectors translation of
-                   # SCSI BIOSes (31 cylinders), AUTOEXEC.BAT prints SCSI-DOS-OK
-  local fd=$1.fd13 mt=$1.mtoolsrc part=$((63 * 512))
-  mkdir -p "$(dirname "$1")"
-  mkdir -p "$(dirname "$1")"
-  unzip -p "$nb/sources/FD13-LiteUSB.zip" FD13LITE.img > "$fd"
-  printf 'drive z: file="%s" partition=1\nmtools_skip_check=1\n' "$1" > "$mt"
-  rm -f "$1"
-  truncate -s $((65520 * 512)) "$1"
-  dd if="$fd" of="$1" bs=446 count=1 conv=notrunc status=none                # FreeDOS MBR code
-  dd if="$fd" of="$1.boot" bs=512 skip=63 count=1 status=none                 # FreeDOS FAT16 boot sector
-  MTOOLSRC=$mt mpartition -I -c -t 31 -h 64 -s 32 z:
-  MTOOLSRC=$mt mpartition -a z:
-  MTOOLSRC=$mt mformat -h 64 -s 32 -t 31 -H 32 -B "$1.boot" z:
-  for f in KERNEL.SYS COMMAND.COM; do
-    mcopy -i "$fd@@$part" "::/$f" - | MTOOLSRC=$mt mcopy - "z:/$f"
-  done
-  printf '@echo off\r\nver\r\necho SCSI-DOS-OK\r\n' | MTOOLSRC=$mt mcopy - z:/AUTOEXEC.BAT
-  rm -f "$fd" "$1.boot" "$mt"
 }
 
 disk_cfg() {  # path -> 86Box config lines for that image as IDE primary master
@@ -153,10 +153,20 @@ vm_end_of_post() {  # [timeout] -> the setup prompt; F1 past the POST error halt
   vm_wait_text "Press DEL to enter SETUP, ESC for boot" 10
 }
 
-vm_menu() {  # main menu entry index (0-13, column by column) -> opens it; the menu keeps its cursor
+vm_menu() {  # main menu entry index (0-14, column by column) -> opens it; the menu keeps its cursor
   local i
-  for ((i = 0; i < ($1 - menu_sel + 14) % 14; i++)); do vm_key $K_DOWN; done
+  for ((i = 0; i < ($1 - menu_sel + 15) % 15; i++)); do vm_key $K_DOWN; done
   menu_sel=$1
+  vm_key $K_ENTER
+}
+
+vm_info() {  # page index (0 CPU, 1 PCI, 2 USB, 3 ISA, 4 IDE, 5 chipset, 6 memory speed, 7 CPU benchmark,
+             # 8 disk benchmark, 9 disk speed) -> opens it from the main menu;
+             # ESC goes back to the HARDWARE INFORMATION menu, ESC again to the main menu
+  local i
+  vm_menu 6
+  vm_wait_text "HARD DISK SPEED" 5
+  for ((i = 0; i < $1; i++)); do vm_key $K_DOWN; done
   vm_key $K_ENTER
 }
 

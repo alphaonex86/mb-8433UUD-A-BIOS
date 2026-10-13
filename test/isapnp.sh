@@ -10,9 +10,7 @@ net_01_link = 0"
 
 isa_page() {  # setup -> HARDWARE INFORMATION -> ISA page, then back to the main menu
   vm_setup
-  vm_menu 6
-  vm_wait_text "CPU +:" 5
-  vm_key $K_PGDN $K_PGDN
+  vm_info 3                                       # ISA RESOURCES AND IRQ MAP
   vm_wait_text "IRQ 15" 5
 }
 port() {  # I/O port (hex) -> value read (hex)
@@ -27,7 +25,7 @@ isa_page
 vm_expect "ISA PnP RTL8019: 220/5 Realtek Plug & Play"
 vm_expect "IRQ 5 : ISA PnP card"
 [ "$(port 220)" != ff ] || fail "the card does not answer at 220h"
-vm_key $K_ESC
+vm_key $K_ESC $K_ESC                               # page, then the HARDWARE INFORMATION menu
 vm_menu 4                                         # PNP/PCI CONFIGURATION
 vm_wait_text "PnP BIOS Auto-Config +: Enabled" 5
 for _ in $(seq 9); do vm_key $K_DOWN; done

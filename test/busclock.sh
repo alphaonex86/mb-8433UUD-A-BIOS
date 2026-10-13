@@ -5,16 +5,18 @@
 . "$(dirname "$0")/lib.sh"
 if [ $# -eq 0 ]; then
   mkdir -p "$vm_dir"
-  # 86Box CPU family, speed, multiplier; MHz; HB50&30 HB51&f0 IBC56&0f IBCA4&03 (original BIOS values)
-  xargs -P 5 -L 1 "$0" > "$vm_dir/all.log" 2>&1 <<'LIST'
+  # 86Box CPU family, speed, multiplier; MHz; HB50&30 HB51&f0 IBC56&0f IBCA4&03 (original BIOS values, but for
+  # the Am5x86 at 3 x 40 MHz: the original BIOS assumes 4x and takes the 33 MHz row, newBIOS the 40 MHz one)
+  xargs -P 6 -L 1 "$0" > "$vm_dir/all.log" 2>&1 <<'LIST'
 am486dx2 50000000 2 50 30 f0 00 01
 am5x86 133333333 4 133 10 a0 01 01
 am486dx2 80000000 2 80 00 a0 00 02
 am486dx4 120000000 3 120 00 a0 00 02
+am5x86 120000000 3 120 00 a0 00 02
 i486dx 50000000 1 50 00 00 00 00
 LIST
   vm_name=busclock
-  [ "$(grep -c '^PASS' "$vm_dir/all.log")" = 5 ] || { cat "$vm_dir/all.log"; fail "see above"; }
+  [ "$(grep -c '^PASS' "$vm_dir/all.log")" = 6 ] || { cat "$vm_dir/all.log"; fail "see above"; }
   echo "PASS [busclock]"
   exit 0
 fi

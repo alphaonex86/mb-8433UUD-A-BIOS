@@ -22,4 +22,8 @@ vm_key $K_Y
 vm_wait_text "No bootable device" 60
 expected="$upto_prompt B9 BA B9 $(echo "$normal" | sed -n '/^B8$/,$p' | sed 1d | tr '\n' ' ')BD"
 [ "$(codes)" = "$expected" ] || fail "POST codes: $(codes) - expected: $expected"
+# each WBINVD empties the whole L2 on this chipset: a POST memory test that flushed per block with the L2 on
+# took minutes on the real board
+n=$(grep -c "WBINVD with the L2 on" "$vm/86box.log" || true)
+[ "$n" -le 100 ] || fail "$n WBINVD with the L2 on (the setup memory test page uses a few)"
 vm_stop

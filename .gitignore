@@ -8,3 +8,4 @@
 # Not redistributable: the board's original Award BIOS dump, NIC boot ROMs
 /BIOSORIGINAL.bin
 /test/roms/
+__pycache__/

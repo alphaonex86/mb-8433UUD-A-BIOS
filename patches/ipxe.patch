@@ -1,0 +1,12 @@
+diff --git a/src/drivers/net/realtek.c b/src/drivers/net/realtek.c
+index a43efb68bb02595722f1cc006ab55a1296f707d0..c8d86a555b9a1f0c492b33427e97bb1e467d8095 100644
+--- a/src/drivers/net/realtek.c
++++ b/src/drivers/net/realtek.c
+@@ -1233,6 +1233,7 @@ static struct pci_device_id realtek_nics[] = {
+ 	PCI_ROM ( 0x021b, 0x8139, "hne300",	"Compaq HNE-300", 0 ),
+ 	PCI_ROM ( 0x02ac, 0x1012, "s1012",	"SpeedStream 1012", 0 ),
+ 	PCI_ROM ( 0x0357, 0x000a, "ttpmon",	"TTTech TTP-Monitoring", 0 ),
++	PCI_ROM ( 0x10ec, 0x8039, "rtl8039",	"RTL8139 clone (10ec:8039)", 0 ),
+ 	PCI_ROM ( 0x10ec, 0x8129, "rtl8129",	"RTL-8129", 0 ),
+ 	PCI_ROM ( 0x10ec, 0x8136, "rtl8136",	"RTL8101E/RTL8102E", 0 ),
+ 	PCI_ROM ( 0x10ec, 0x8138, "rtl8138",	"RT8139 (B/C)", 0 ),

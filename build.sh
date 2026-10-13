@@ -1,9 +1,11 @@
 #!/bin/bash
 # Build newBIOS for the Biostar MB-8433UUD-A: coreboot_486 (UMC chipset init) + SeaBIOS (BIOS services,
-# option ROMs, CMOS setup) + Etherboot (built-in network boot for RTL8139/RTL8169 cards without a boot ROM).
-# Output: out/newbios.rom (flash, also used by the 86Box tests).
-# Sources: fetch_sources.sh (pinned coreboot_486 and seabios_486 trees, Etherboot tarball, in sources/).
-# usage: [DEBUG=1] build.sh    DEBUG=1 also builds out/newbios-debug.rom (logs on COM1).
+# option ROMs, CMOS setup) + iPXE (network boot of the Realtek NICs, in the lower half of a 2 Mbit flash).
+# Output: out/newbios.rom (1 Mbit flash, also used by the 86Box tests) and out/newbios-2mbit.rom (2 Mbit flash such
+# as a W49F002A: build/ipxe.rom in the lower 128 KiB, the BIOS in the upper).
+# Sources: fetch_sources.sh (pinned coreboot_486, seabios_486 and iPXE trees, in sources/).
+# usage: [DEBUG=1] [HALT_ON=n] build.sh    DEBUG=1 also builds out/newbios-debug.rom (logs on COM1);
+#   HALT_ON=1 builds out/newbios-halt1.rom whose Halt On default is No Errors (no keyboard, dead CMOS battery).
 # The patches in patches/ are the source of truth: a missing work tree is recreated from them, and they
 # are re-exported after each build so they always match the built ROM.
 set -euo pipefail
@@ -15,7 +17,7 @@ mkdir -p "$out"
 
 "$nb/fetch_sources.sh" firmware
 "$nb/tools/build_toolchain.sh"
-"$nb/tools/build_etherboot.sh"
+"$nb/tools/build_ipxe.sh"
 xgcc=$cb/util/crossgcc/xgcc/bin
 
 if [ ! -d "$sb/.git" ]; then
@@ -30,13 +32,14 @@ for dst in "$sb/src/newbios_cmos.h" "$cb/src/mainboard/biostar/mb8433/newbios_cm
   cmp -s "$nb/cmos.h" "$dst" || cp "$nb/cmos.h" "$dst"
 done
 
-seabios() {  # name, extra SeaBIOS config -> $sb/out-<name>/bios.bin.elf
+seabios() {  # name, extra SeaBIOS config -> $sb/out-<name>/bios.bcj.elf (x86 BCJ filtered)
   local cfg=$sb/.config-$1 log=$out/seabios-$1.build.log
   { cat "$cb/src/mainboard/biostar/mb8433/config_seabios" "$nb/seabios.config"; echo "$2"; } > "$cfg"
   local mk=(make -C "$sb" -s CROSS_PREFIX="$xgcc/i386-elf-" OUT="out-$1/" KCONFIG_CONFIG="$cfg")
   "${mk[@]}" olddefconfig > "$log" 2>&1
   "${mk[@]}" -j"$(nproc)" >> "$log" 2>&1 \
     || { tail -30 "$log"; echo "SEABIOS BUILD FAILED (log: $log)" >&2; exit 1; }
+  "$nb/tools/bcj_x86.py" "$sb/out-$1/bios.bin.elf" "$sb/out-$1/bios.bcj.elf"   # undone by coreboot's loader
 }
 
 # Same host-tool/warning workarounds as build_variants.sh (gcc>=15 host, author's %u for size_t).
@@ -51,8 +54,9 @@ coreboot() {  # tag, SeaBIOS name, extra coreboot config, [CBFS files to add: na
 CONFIG_DEFAULT_CONSOLE_LOGLEVEL_4=y
 # CONFIG_PAYLOAD_SEABIOS is not set
 CONFIG_PAYLOAD_ELF=y
-CONFIG_PAYLOAD_FILE="$sb/out-$2/bios.bin.elf"
+CONFIG_PAYLOAD_FILE="$sb/out-$2/bios.bcj.elf"
 CONFIG_COMPRESSED_PAYLOAD_LZMA=y
+CONFIG_PAYLOAD_BCJ_X86=y
 CONFIG_POST_DEVICE=y
 CONFIG_POST_IO=y
 # CONFIG_DECOMPRESS_OFAST is not set
@@ -63,22 +67,39 @@ EOF
   "${mk[@]}" olddefconfig > "$log" 2>&1
   "${mk[@]}" -j"$(nproc)" >> "$log" 2>&1 \
     || { tail -30 "$log"; echo "BUILD FAILED: $tag (log: $log)" >&2; exit 1; }
-  local rom=$cb/$obj/coreboot.rom
-  cp "$rom" "$out/$tag.rom"
-  for f in "${@:4}"; do
-    "$cb/$obj/cbfstool" "$out/$tag.rom" add -t raw -n "${f%%=*}" -f "${f#*=}" > /dev/null \
-      || { echo "BUILD FAILED: $tag, no room for ${f%%=*}" >&2; exit 1; }
+  local rom=$out/$tag.rom cbfs=("$cb/$obj/cbfstool" "$out/$tag.rom") f
+  cp "$cb/$obj/coreboot.rom" "$rom"
+  # ESCD in the 4 KiB parameter block at flash 0x1c000 of the Intel 28F001BX-T: a raw file whose data fills
+  # it (ESCD_OFF in SeaBIOS pnpbios.c). The payload and the first extra file fill the flash below it, postcar
+  # the 8 KiB above it, the other files what is left. cmos_layout.bin goes: nothing reads it (no option table).
+  head -c 4096 /dev/zero | tr '\0' '\377' > "$cb/$obj/escd.bin"
+  for f in fallback/postcar fallback/payload cmos_layout.bin; do "${cbfs[@]}" remove -n "$f"; done
+  "${cbfs[@]}" add -t raw -n escd -f "$cb/$obj/escd.bin" -b 0x1c000 \
+    && "${cbfs[@]}" add-payload -n fallback/payload -f "$sb/out-$2/bios.bcj.elf" -c lzma > /dev/null \
+    || { echo "BUILD FAILED: $tag, no room for the ESCD and the payload" >&2; exit 1; }
+  for f in "${@:4:1}" postcar "${@:5}"; do
+    if [ "$f" = postcar ]; then
+      "${cbfs[@]}" add-stage -n fallback/postcar -f "$cb/$obj/cbfs/fallback/postcar.elf" -c none > /dev/null
+    else
+      "${cbfs[@]}" add -t raw -n "${f%%=*}" -f "${f#*=}" > /dev/null
+    fi || { echo "BUILD FAILED: $tag, no room for ${f%%=*}" >&2; exit 1; }
   done
-  "$cb/$obj/cbfstool" "$out/$tag.rom" print > "$out/$tag.cbfs.txt"
+  "${cbfs[@]}" print > "$out/$tag.cbfs.txt"
+  [ "$(awk '$1 == "escd" {print $2}' "$out/$tag.cbfs.txt")" = 0x1bfe0 ] \
+    || { echo "BUILD FAILED: $tag, the ESCD data is not at flash 0x1c000" >&2; exit 1; }   # 32-byte header
   echo "$out/$tag.rom: $(awk '/empty/ {s += $4} END {print s}' "$out/$tag.cbfs.txt") bytes free"
+  local ipxe_size; ipxe_size=$(stat -c %s "$nb/build/ipxe.rom")
+  { cat "$nb/build/ipxe.rom"; head -c $((131072 - ipxe_size)) /dev/zero | tr '\0' '\377'; cat "$rom"; } \
+    > "$out/$tag-2mbit.rom"
 }
 
-seabios rel ""
-coreboot newbios rel "# CONFIG_CONSOLE_SERIAL is not set
+halt=${HALT_ON:-0} rom=newbios
+[ "$halt" = 0 ] || rom=newbios-halt$halt
+seabios rel "CONFIG_NEWBIOS_HALT_ON=$halt"
+coreboot "$rom" rel "# CONFIG_CONSOLE_SERIAL is not set
 # CONFIG_BOOTBLOCK_CONSOLE is not set
-# CONFIG_POSTCAR_CONSOLE is not set" \
-  "pxe.rom.lzma=$nb/build/etherboot/pxe.rom.lzma" "etc/pxe-pci-ids=$nb/build/etherboot/pxe-pci-ids.bin"
-# no coreboot log in the flash ROM (the debug ROM has it, but no room for the built-in network boot ROM)
+# CONFIG_POSTCAR_CONSOLE is not set"
+# no coreboot log in the flash ROM (the debug ROM has it)
 if [ -n "${DEBUG:-}" ]; then
   seabios debug "CONFIG_DEBUG_LEVEL=1
 CONFIG_DEBUG_SERIAL=y

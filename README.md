@@ -16,7 +16,9 @@ for a POST card: [POSTCODES.md](POSTCODES.md); everything that is not C: [ASM.md
 | ![Chipset features](screenshot/CHIPSET.png) | ![CPU, cache, memory](screenshot/CPU-CACHE-MEMORY.png) |
 | ![PCI devices](screenshot/PCI-DEVICES.png) | ![ISA resources and IRQ map](screenshot/ISA-RESOURCES-AND-IRQ-MAP.png) |
 | ![IDE drives](screenshot/IDE-DRIVES.png) | ![Chipset registers](screenshot/CHIPSET-REGISTERS.png) |
-| ![Memory read speed](screenshot/MEMORY-READ-SPEED.png) | ![Memory test](screenshot/MEMTEST.png) |
+| ![Memory speed](screenshot/MEMORY-SPEED.png) | ![Memory test](screenshot/MEMTEST.png) |
+| ![CPU benchmark](screenshot/CPU-BENCHMARK.png) | ![Hard disk benchmark](screenshot/HARD-DISK-BENCHMARK.png) |
+| ![Hard disk speed](screenshot/HARD-DISK-SPEED.png) | |
 
 ## Does it fit in the 128 KiB flash? Yes
 
@@ -78,7 +80,7 @@ F7 defaults, F10 save & reboot (Y/N), Esc in the main menu quits without saving.
 | POWER MANAGEMENT SETUP | APM BIOS, HDD standby timer | SeaBIOS |
 | PNP/PCI CONFIGURATION | PCI INTA#-INTD# IRQ (Auto or 3-15), IDE PIO mode per drive (Auto, 0-4), IDE 32-bit transfer, PnP BIOS Auto-Config (ISA PnP cards get free I/O, IRQ and DMA at POST; off: left inactive for the OS) | coreboot (PIRQ), SeaBIOS (UM8886BF timings, SET FEATURES) |
 | INTEGRATED PERIPHERALS | onboard IDE primary/secondary, FDC, serial 1/2 (COM1-4 or off), parallel (378/278 or off) and mode (SPP/EPP/ECP) | SeaBIOS (UM8886BF, UM8663BF) |
-| HARDWARE INFORMATION | CPU (CPUID vendor/family/model/stepping/features, Socket 3 names incl. Cyrix DIR0), clock, L1/L2, DRAM, chipset revisions; PCI devices with vendor, class, INT pin and IRQ; ports, ISA option ROMs and IRQ 0-15 map; IDE drives (model, size, CHS, translation, PIO used/maximum); chipset register dump (UM8881F, UM8886BF, IDE, UM8663BF); memory read speed line chart (SysSpeed style) over 37 block sizes 4K-2M, measured when first shown, drawn with redefined characters in 8-dot cells on that page only (same 31.5 kHz / 70 Hz signal); L1, L2 and DRAM show as steps on the real board, flat in 86Box, which has no cache timing | read-only |
+| HARDWARE INFORMATION | CPU (CPUID vendor/family/model/stepping/features, Socket 3 names incl. Cyrix DIR0), clock, L1/L2, DRAM, chipset revisions; PCI devices with vendor, class, INT pin and IRQ; ports, ISA option ROMs and IRQ 0-15 map; IDE drives (model, size, CHS, translation, PIO used/maximum); chipset register dump (UM8881F, UM8886BF, IDE, UM8663BF); benchmarks in VGA mode 12h (SpeedSys style): memory read, write and move speed over 37 block sizes 4K-2M (L1, L2 and DRAM show as steps on the real board, flat in 86Box, which has no cache timing); CPU integer (MIPS) and FPU (MFLOPS) bars against Intel/AMD 486-class CPUs (same clocks per instruction: their speed is this CPU's per MHz times their clock), with the system data; hard disk benchmark of any IDE or USB disk (maximal, random and track-to-track seek, buffered read, linear read and access time across the disk; ESC stops it, a read over 2 s ends it); hard disk speed bars against the ATA PIO mode limits | read-only |
 | MEMORY TEST | endless passes (pass counter, pass and test progress bars) of the default pass of memtest86+ 4.20 (tests 0-8: address walking ones and own address, moving inversions ones & zeros, 8-bit, random and 32-bit patterns, block move, random number sequence, modulo 20), reimplemented on the RAM above 1 MiB that POST does not use; CPU, L2, memory size and the POST read speeds in the header; pass count, time, errors with address, expected/read value, bits and count; ESC back | setup |
 | LOAD BIOS DEFAULTS, LOAD SETUP DEFAULTS (also F6/F7 on the pages) | the original BIOS's fail-safe and Setup values, except Standard CMOS | |
 | SUPERVISOR PASSWORD, IDE HDD AUTO DETECTION, SAVE & EXIT, EXIT WITHOUT SAVING | as in Award | |
@@ -104,8 +106,8 @@ Not implemented from the Award pages (no effect possible or not needed): virus w
 seek, gate A20 option, memory parity check, L1 cache update scheme (the original BIOS changes no register
 for it), video BIOS shadow (the PCI VGA ROM is always shadowed), video type, power management
 timers and wake events (need SMM), slot INT# mapping, PCI IRQ edge/level, assign IRQ for VGA, PCI IDE IRQ
-mapping. Not done from the original BIOS: the PnP BIOS runtime functions 00h-0Bh and 40h-43h and the ESCD
-(they would write the flash chip at run time; Win9x and Linux find and configure the devices themselves).
+mapping. PnP BIOS runtime functions 00h-0Bh and 40h-43h with the ESCD in the flash parameter block at
+0x1C000, like the original BIOS (written only when it changes; Intel BX and Winbond W29C010 flash).
 
 ## Compatibility with the original BIOS
 
@@ -117,10 +119,10 @@ mapping. Not done from the original BIOS: the PnP BIOS runtime functions 00h-0Bh
 | IDE primary + secondary, PIO 0-4 per drive, CHS-only and LBA drives | yes | yes | `dos`, `setup`, `chipset`, `bigdisk` |
 | Floppy A/B, swap | yes | yes | `setup` (detection) |
 | PCI option ROMs, VGA (incl. class 0301) | yes | yes | all |
-| ISA option ROMs C8000-DFFFF, RAM in their window | yes | yes, run in place | `scsi` (Adaptec AHA-154xCF) |
+| ISA option ROMs C8000-DFFFF, RAM in their window | yes | yes, run in place | `devfuzz` (ISA ROMs) |
 | ISA shared memory C8000-DFFFF | yes | yes | `dos` (WD8013) |
-| NIC boot ROM (RTL8139C socket), PnP/BEV | yes | yes | `pxe` (operator's Etherboot 5.4.4) |
-| Network boot built into the BIOS | no | yes: Etherboot 5.4.4 for RTL8139/RTL8169 cards without a boot ROM | `pxebios` |
+| NIC boot ROM, PnP/BEV | yes | yes (a socket ROM runs for other cards) | `pxe`, `pxe8169` |
+| Network boot | NIC boot ROM | iPXE in the lower half of a 2 Mbit flash (W49F002A...): realtek driver, RTL8139 (10ec:8139, the 10ec:8039 clone, plain or C+) and RTL8169, used instead of their socket ROMs; DHCP, then the DHCP boot file (bzImage or iPXE script with the kernel's path and arguments) | `pxe`, `pxe8169` |
 | Drive A default 1.44M, 3.5 in. (Setup defaults) | yes | yes | `setup`, `errors` |
 | Linux boot: memory map, APM, PCI IRQ | yes | yes (E820, APM 1.2) | `pxe` (Linux 6.18.55) |
 | Chipset/super I/O setup values | yes | same register fields | `chipset` |
@@ -130,8 +132,8 @@ mapping. Not done from the original BIOS: the PnP BIOS runtime functions 00h-0Bh
 | POST errors, Halt On, F1 prompt; fail-safe defaults | yes | yes | `errors` |
 | Hard disk types 1-46 and User | yes | yes | `hddtype` |
 | IDE HDD block mode | yes | yes (also LBA48) | `setup`, `dos`, `bigdisk` |
-| Auto chipset timings per bus clock | yes | same table | `busclock` (5 CPUs, same values as the original) |
-| ISA PnP cards configured at POST | yes | yes (no ESCD, no PnP BIOS runtime) | `isapnp` |
+| Auto chipset timings per bus clock | yes | same table; the core clock is measured with a 16-byte aligned loop (unaligned: 107-121 MHz on a 133), an Am5x86 is 4x only when that alone gives a standard bus clock (the original assumes 4x: 3 x 40 MHz got the 33 MHz timings) | `busclock` (6 CPUs) |
+| ISA PnP cards configured at POST, PnP BIOS, ESCD | yes | yes | `isapnp`, `pnpbios` |
 | POST codes on port 80h | yes (Award codes) | own codes, [POSTCODES.md](POSTCODES.md) | `post` |
 
 Conventional memory is 636 KiB instead of 639/640 KiB, chosen by the operator: the UMC shadow
@@ -144,25 +146,28 @@ write-protected after POST like under Award.
 `vm/` (CMOS, disk and settings kept between runs, flash reloaded from the ROM, RTC not synced to the host).
 Hardware: 84xxuuda, Am5x86-133, one 32 MB SIMM and 256 KB L2
 (`[UMC HB4(8881F)]` in `vm/86box.cfg`), TGUI9440, FreeDOS disk
-on IDE, RTL8139C with the operator's Etherboot ROM (SLiRP DHCP/TFTP: `boot.pxe` → Linux 6.18) and
-RTL8169S with the iPXE ROM (DHCP, then `bzImage` → Linux 6.18): set "1st Boot Device = Network" in setup,
-ESC at the prompt picks the card. POST card on (codes in the status bar). Drive A 3.5" 1.44M, no drive B;
-floppy and hard disk sounds (samples of the 86Box ROM set). The memory read speed chart is
-the last page (6/6) of HARDWARE INFORMATION. `BIOSORIGINAL.bin` (a dump of your board's chip) as argument boots
+on IDE, a 2 Mbit flash with iPXE for the operator's RTL8139C (10ec:8039, no C+) and an RTL8169S, no socket ROMs
+(SLiRP DHCP/TFTP: `boot.ipxe` → Linux 6.18): set "1st Boot Device = Network" in setup, ESC at the prompt picks
+the card. POST card on (codes in the status bar). Drive A 3.5" 1.44M, no drive B;
+floppy and hard disk sounds (samples of the 86Box ROM set). The benchmarks are the last pages of
+HARDWARE INFORMATION. `BIOSORIGINAL.bin` (a dump of your board's chip) as argument boots
 the original BIOS.
 
 ## Build
 
-- `./build.sh` → `out/newbios.rom`, the same ROM for the flash and for 86Box. `DEBUG=1` adds
-  `out/newbios-debug.rom` (romstage/ramstage logs at coreboot level 7 and SeaBIOS level 1 on COM1; no room
-  for the built-in network boot ROM).
-- Built-in network boot: `tools/build_etherboot.sh` builds Etherboot 5.4.4 with the rtl8139 and r8169
-  drivers in one PCI ROM (`patches/etherboot.patch`, coreboot's cross compiler); `build.sh` adds it to the
-  CBFS as `pxe.rom.lzma` (22.6 KB) with `etc/pxe-pci-ids` (the drivers' PCI IDs). SeaBIOS runs it once,
-  for the first supported card without its own boot ROM; Etherboot tries each supported card in turn.
+- `./release.sh` → `out/release/`: the ROMs, only when every test passed; flash only from there.
+- `./build.sh` → `out/newbios.rom` (1 Mbit flash, and 86Box) and `out/newbios-2mbit.rom` (2 Mbit flash: `build/ipxe.rom` in the lower 128 KiB, decoded at FFFC0000 while UM8886 57h bits 7-6 are set, the BIOS in the upper). The 86Box fork emulates the board's Intel 28F001BX-T flash (`BOX86_FLASH=w29c010` for the old Winbond), with WE# gated by UM8886 IBC47 bit 6 and `BOX86_FLASH_VPP=5` for JP13 at 5 V. `HALT_ON=1` builds `out/newbios-halt1.rom`, whose Halt On default is No Errors: POST errors (e.g. a dead CMOS battery, no keyboard) print a WARNING and the boot continues. The SeaBIOS payload is x86 BCJ filtered before LZMA (`tools/bcj_x86.py`, undone by coreboot's loader). `DEBUG=1` adds
+  `out/newbios-debug.rom` (romstage/ramstage logs at coreboot level 7 and SeaBIOS level 1 on COM1).
+- Network boot ROM: `tools/build_ipxe.sh` builds iPXE's realtek driver with the 10ec:8039 clone added
+  (`patches/ipxe.patch`, config `configs/ipxe`) as `build/ipxe.rom`.
+- The 86Box fork also models the UM8881 L2 in normal mode until it is coherent with DRAM (random power-on
+  tags, data and dirty bits, no valid bit, write-through/write-back; hypothesis: with a size programmed it
+  fills lines even with 50h bit 7 clear), the RTL8139 PCI device ID (`device_id`) and a plain RTL8139C (`cplus = 0`),
+  an Am5x86 at 3 x 40 MHz, LAN background broadcasts (`BOX86_NET_NOISE_MS`), key combinations in the test control (`combo`), a VIA UHCI USB card with a low-speed keyboard and a disk (`BOX86_USB_KBD`, `BOX86_USB_DISK`, `usbkey`), port 92h without reset as on the real board, the Intel flash above, a W49F002A 2 Mbit flash (`BOX86_FLASH=w49f002a`, 256 KiB image) with the UM8886 57h decode
+  of its lower half, and the power-on time of the 8042 and keyboard.
 - Sources: `fetch_sources.sh` (run by the builds) downloads the pinned trees and tarballs into `sources/`:
   the 486 coreboot and SeaBIOS of their author, [pc2005cz/coreboot_486](https://github.com/pc2005cz/coreboot_486)
-  and [pc2005cz/seabios_486](https://github.com/pc2005cz/seabios_486), the Etherboot 5.4.4 tarball; for the tests 86Box 6.0, iPXE,
+  and [pc2005cz/seabios_486](https://github.com/pc2005cz/seabios_486), iPXE; for the tests 86Box 6.0,
   FreeDOS 1.3 and Linux 6.18. `tools/build_toolchain.sh` builds coreboot's i386 cross compiler once (it
   downloads GCC and binutils). `sources/coreboot_486` is patched in place (`patches/coreboot.patch`),
   `build/seabios` is a clone of `sources/seabios_486` + `patches/seabios.patch`; SeaBIOS options in
@@ -181,25 +186,42 @@ out) and COM1:
 |---|---|
 | `setup` | defaults on cleared CMOS (drive A 1.44M), all menus, date/floppy/boot order edited and kept after F10, hardware information pages, secondary IDE disk |
 | `dos` | POST screen (board, release date, "Detecting HDD" lines, version); FreeDOS 1.3 from IDE (CHS-only drive), HimemX, 636 KiB + 31 MiB XMS, WD8013 shared RAM at D0000; L1 cache on, Auto chipset timings as the original BIOS, no PCI interrupt on IRQ 14/15 |
-| `scsi` | Adaptec AHA-154xCF ISA BIOS (real ROM from the 86Box set, RAM in its window), DOS from SCSI |
-| `pxe` | DOS disk + the operator's NIC ROM: default order boots DOS; "Network" first → Etherboot → iPXE NBP → Linux 6.18.55 (e820, APM, 8139too, sda) |
-| `pxebios` | RTL8139C+ without cable and RTL8169S, no socket ROMs: one network entry (built-in Etherboot), which falls back from the RTL8139 to the RTL8169 → iPXE NBP → Linux 6.18.55 |
-| `pxe8169` | no disk, PCI RTL8169S with an iPXE ROM in its socket: "Network" first → iPXE DHCP + TFTP → Linux 6.18.55 with `ip=dhcp` (r8169, link up at 1 Gbps, DHCP lease) |
+| `pxe` | 2 Mbit flash ROM, DOS disk, the operator's card (plain RTL8139C, 10ec:8039, no socket ROM): default order boots DOS; "Network" first → iPXE from the flash (legacy mode) → DHCP → boot.ipxe → Linux 6.18.55 (e820, APM, sda) |
+| `floppy` | boot from drive A: boot sector reads sector 2 with INT 13h |
+| `pxe8169` | 2 Mbit flash ROM, no disk, PCI RTL8169S without socket ROM: "Network" first → iPXE from the flash → DHCP → boot.ipxe → Linux 6.18.55 with `ip=dhcp` (r8169, link up at 1 Gbps, DHCP lease) |
 | `chipset` | manual chipset values, external cache off, PCI INTA# IRQ, PIO mode 2, serial/parallel settings program the original BIOS's register fields; fallback after unfinished POSTs (warning on screen); System/Video BIOS cacheable as the original; internal cache off still off in DOS |
 | `password` | password asked before boot (System) and for setup, wrong one refused |
 | `bigdisk` | 1 TB LBA48 disk: size, LBA translation, INT 13h extended read beyond 128 GiB, then 64 sectors written and read back there in block mode (READ/WRITE MULTIPLE EXT), checked in the image |
 | `post` | POST codes of a boot, setup and its memory test equal the order in POSTCODES.md |
 | `errors` | cleared CMOS halts on "CMOS checksum error" until F1/DEL; drive A set up but absent: "Floppy disk(s) fail (80)", no halt with Halt On "All, But Diskette"; LOAD BIOS DEFAULTS keeps Standard CMOS |
 | `hddtype` | User type typed in setup is the INT 13h geometry (FreeDOS boots, translation TYPE); type 2 without a drive: "Hard disk(s) fail (80)" |
-| `busclock` | Am486DX2-50/80, Am486DX4-120, i486DX-50, Am5x86-133: clock shown and Auto chipset fields equal to the original BIOS's (`test/oracle/busclock.sh`) |
+| `busclock` | Am486DX2-50/80, Am486DX4-120, i486DX-50, Am5x86-133: clock shown and Auto chipset fields equal to the original BIOS's (`test/oracle/busclock.sh`); Am5x86 at 3 x 40 MHz: the 40 MHz timings |
 | `isapnp` | RTL8019AS PnP card isolated and given 220h/IRQ 5 (answers there); inactive with PnP BIOS Auto-Config off |
+| `pnpbios` | PnP BIOS from DOS (real and 16-bit protected mode): system nodes, ISA configuration, ESCD read, write, reset restores POST's ESCD |
 | `memtest` | MEMORY TEST on a 4 MB SIMM: a full pass without errors; with a faulty bit in the fork, POST reports the block and the test the address, values and bit |
 | `ram` | 9 SIMM/L2 configurations (one bank to four, double sided, MA11 12-row DRAMs, region swap, bank 1 alone, no L2 to 1 MB in 1 or 2 banks): memory and cache on the POST screen, memory test, chipset fields |
+| `dramfuzz` | native, no emulator: coreboot's DRAM/L2 sizing (`raminit.c`, `memmap.c`, romstage defaults) and SeaBIOS's `setup_l2_cache` (the L2 is enabled at POST like the original BIOS; coreboot only sizes it), compiled unchanged against a C port of the fork's UM8881 model with a normal-mode L2: all 10^4 SIMM combinations x 100 L2 variants (absent, 64K-1M in 1 or 2 banks, random power-on contents, fake data SRAM and/or tag RAM, setup/CMOS guard): RAM top, every 4 KiB page present and distinct, no false L2 hit, register fields as `ram` and the original BIOS |
+| `cmosfuzz` | native: the CMOS values coreboot reads (`newbios.c` chipset options, Auto timings, PCI IRQ presets through the PIRQ routing), compiled unchanged against CMOS/PCI/PIT seams with bounds, division and shift traps: only documented fields and values written, romstage and ramstage agree on manual/Auto, no IRQ outside the routing table's mask |
+| `l2guard` | valid CMOS: setup entered and reset three times keeps the L2 on; an L2 init left unfinished (CMOS 3Eh bit 7) leaves it off once, reason on the CPU page |
+| `halt1` | the `HALT_ON=1` ROM: POST errors print a WARNING, DOS boots without a key |
+| `bootmenu` | F8 in the setup main menu leaves setup into the boot menu |
+| `fmtlint` | no SeaBIOS-unsupported printf formats (`%*s`, flags, padded `%s`) in the patched sources |
+| `cachetest` | the verdict of `tools/cachetest.c` on synthetic speed curves |
+| `kbdpower` | cold boot with a slow 8042 and keyboard (86Box `BOX86_KBC_POWERON_MS`/`BOX86_KBD_POWERON_MS`, up to 1 s and 2.5 s): keyboard found and working; a 15 s silent keyboard gives the keyboard error |
+| `flashtime` | 86Box counts of instructions fetched and bytes read from the flash (8-bit ISA on the board, ~1 us a byte): POST under 1 s of flash time, nothing from the flash after it |
+| `cachepage` | setup CACHE TEST: the 16 L2 settings run and work on the emulated L2, the POST's write-back L2 is on again afterwards |
+| `otherflash` | a JEDEC flash chip newBIOS does not know (86Box `BOX86_FLASH=sst39sf010`, as a W49F002A or SST39SF010A): POST, save and reboot, reset; the flash is not written |
+| `warmboot` | Ctrl+Alt+Del (keyboard controller reset: the board's port 92h does not reset; CPU only, not the chipset) on the operator's setup (2 Mbit flash, RTL8139C 10ec:8039, Am5x86 3x40): from DOS twice, from the setup, then three times with the card left receiving by iPXE while LAN broadcasts arrive every ms (`BOX86_NET_NOISE_MS`): the POST always finishes |
+| `flashlinux` | `tools/flashbios` from Linux on the emulated board (W49F002A, its JEDEC commands and sector map, programming only clears bits): a non-image refused, the lower half erased, the image restored, a boot block byte changed; after a reset the rewritten BIOS runs and the chip matches |
+| `usbkbd` | USB keyboard only (86Box UHCI like the operator's VIA card, low-speed HID keyboard; the PS/2 keyboard never answers): no keyboard error, F1/DEL/setup navigation and Ctrl+Alt+Del on it work, the USB page lists it |
+| `usbboot` | FreeDOS from a USB disk (bulk-only mass storage), then Ctrl+Alt+Del twice while the USB controller still runs: the POST finishes and boots from USB again |
+| `usbfault` | USB faults injected by the emulator (`BOX86_USB_FAULT`): keyboard stalling its requests (keyboard error, no hang), disk never sending data, stalling READ, bad CSW signature (POST finishes, boot fails with a message), disk unplugged after its first READ then Ctrl+Alt+Del (POST finishes without it) |
+| `bench` | benchmark pages on 86Box screenshots, by pixel colors and by the local OCR (tesseract, `test/bench/ocr.py`; no AI in the tests): memory chart curves (read, write, move), CPU ALU bar, linear read curve of the IDE disk, a speed bar per disk (IDE and USB); back to text mode after each |
+| `deadcmos` | dead CMOS battery: random CMOS images (RTC registers, shutdown code 0Fh, newBIOS block, boot-failure counter) at power-on; POST reaches the F1 prompt and DOS boots |
+| `devfuzz` | native: SeaBIOS IDE/ATAPI, floppy, PCI option ROMs, ISA ROMs and ISA PnP, USB (UHCI/OHCI/EHCI, hubs, keyboard, storage) and CMOS/setup, compiled unchanged under ASan/UBSan with SeaBIOS's own printf engine (src/output.c), against fault-injecting device models (edge values, garbage, never-ready devices, USB controllers still running after a warm boot: stopped before bus mastering), the boot ROM of a 2 Mbit flash: no hang, crash or overflow |
 
 Inputs: `sources/` (`fetch_sources.sh`); the 86Box ROM set ([86Box/roms](https://github.com/86Box/roms) in
-`~/.local/share/86Box/roms`: VGA BIOS, Adaptec SCSI BIOS); a boot ROM for the RTL8139 socket in
-`test/roms/etherboot-5.4.4-rtl8139.rom` (an Etherboot 5.4.4 rtl8139 ROM of at most 32 KiB, not included);
-the PXE NBP and the RTL8169 boot ROM (`test/ipxe/build.sh`); the test kernel (`test/linux/build.sh`, whose busybox and glibc
+`~/.local/share/86Box/roms`: VGA BIOS); the test kernel (`test/linux/build.sh`, whose busybox and glibc
 come from the target directory of the coreboot_486 author's
 [buildroot_486](https://github.com/pc2005cz/buildroot_486) build in `sources/buildroot_486/output`).
 `test/oracle/sweep.sh`, `sweep2.sh` and `diff.py` regenerate `award_map.txt` from `BIOSORIGINAL.bin` (a
@@ -240,7 +262,8 @@ after a CPU-only reset (the "CPU Internal Cache" option); USB 1/2; POST errors w
 recalibrate check, PS/2 keyboard flag); IDE block mode (SET MULTIPLE MODE, READ/WRITE MULTIPLE and their EXT forms); the port's
 trace prints moved from debug level 1 to 3; fixed
 drive types as INT 13h geometry; ISA PnP configuration at POST; CPU name and clock without CPUID; drive
-detection lines at POST; built-in network boot ROM from the CBFS (`optionroms.c`, CBFS read enabled);
+detection lines at POST; PnP BIOS runtime and ESCD (`pnpbios.c`); L2 enabled at POST like the original BIOS
+(`setup_l2_cache`); port I/O ordered with memory (`x86.h`);
 version string without host name, release date (`scripts/buildversion.py`).
 
 coreboot (`patches/coreboot.patch`): setup values for chipset, external cache and PCI IRQs
@@ -272,3 +295,19 @@ the original); PCI interrupts on IRQ 9-11 (15 is the secondary IDE); postcar rea
 The scripts, tests and documents of this repository: GPL-3.0 (`LICENSE`). The patches in `patches/`
 modify, and keep the licenses of, the projects they apply to: coreboot (GPL-2.0), SeaBIOS (LGPL-3.0) and
 86Box (GPL-2.0-or-later). No BIOS image, firmware blob or ROM is distributed here.
+
+## Testing on the board without reflashing
+
+**CACHE TEST** in the setup main menu: the L2 init with each write policy, timing (50h bits 5-4) and tag width, and the read speed inside the L2 against DRAM for those that work. The line of a setting is on screen before it runs: if it hangs, reset (the next POST leaves the L2 off once).
+
+## Updating the BIOS from Linux
+
+`tools/flashbios` (in the HDD image's `/usr/bin`, or `build/flashbios`) rewrites a W49F002A in the board, as root:
+`flashbios -n IMAGE` identifies the chip (and whether its boot block is locked) and compares, `flashbios IMAGE`
+rewrites only the blocks that differ (boot block last) and verifies them, `flashbios -r FILE` reads the chip.
+The BIOS runs from shadow RAM, so the chip is free; writes are enabled as the BIOS does for its ESCD. The
+W49F002A programs at 5 V (JP13 at 5 V); the original Intel 28F001BX-T needs 12 V and a programmer.
+
+## Checking the L2 under Linux
+
+`tools/cachetest.c` (built as `build/cachetest` with the HDD image's i486 uClibc toolchain) prints the UM8881F L2 registers the BIOS left and the read speed by block size from 4 KB to 2 MB. Run it as root under the original Award BIOS and under newBIOS: a working L2 shows a speed step between the L1 size and the L2 size, a fake or disabled one shows none.

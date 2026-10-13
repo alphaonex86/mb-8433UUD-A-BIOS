@@ -20,22 +20,85 @@ index 4f5da88f199ed90e611a2094dc49e423e906b5ae..9910268a68e84ee99bc66e46fea234d7
      /* Done with this frame, update statistics. */
      framecount++;
 diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
-index c677c5367d266231d25eef323d933cbcc3b51699..6814920d5f66aacca909eb1090a1e47dfe34d726 100644
+index c677c5367d266231d25eef323d933cbcc3b51699..6b3ff5e4d28d5881c7dbc7c4bcfc8a5a4ce3d938 100644
 --- a/src/CMakeLists.txt
 +++ b/src/CMakeLists.txt
-@@ -26,6 +26,7 @@ endif()
+@@ -26,6 +26,8 @@ endif()
  
  add_executable(86Box
      86box.c
 +    testctl.c
++    usb_uhci.c
      config.c
      timer.c
      io.c
 diff --git a/src/chipset/umc_8886.c b/src/chipset/umc_8886.c
-index 7350f50584e5aefacecb88f7cceb7c31479f9b4f..8d6fc2079fe3610ee11a19cad83f34a05c61cb86 100644
+index 7350f50584e5aefacecb88f7cceb7c31479f9b4f..69a67b753cfe73858f61bfd012850dce98fd6ae0 100644
 --- a/src/chipset/umc_8886.c
 +++ b/src/chipset/umc_8886.c
-@@ -340,6 +340,7 @@ umc_8886_reset(void *priv)
+@@ -84,6 +84,7 @@
+ #include <86box/machine.h>
+ #include <86box/pic.h>
+ #include <86box/pci.h>
++#include <86box/flash.h>
+ #include <86box/plat_unused.h>
+ #include <86box/port_92.h>
+ #include <86box/chipset.h>
+@@ -91,6 +92,7 @@
+ #ifdef ENABLE_UMC_8886_LOG
+ int umc_8886_do_log = ENABLE_UMC_8886_LOG;
+ 
++
+ static void
+ umc_8886_log(const char *fmt, ...)
+ {
+@@ -203,7 +205,6 @@ umc_8886_write(int func, int addr, UNUSED(int len), uint8_t val, void *priv)
+                     case 0x40 ... 0x42:
+                     case 0x45:
+                     case 0x50 ... 0x55:
+-                    case 0x57:
+                     case 0x70 ... 0x76:
+                     case 0x80 ... 0x83:
+                     case 0x90 ... 0x92:
+@@ -221,7 +222,9 @@ umc_8886_write(int func, int addr, UNUSED(int len), uint8_t val, void *priv)
+                     case 0x46:    /* Bits 3-0 = 0 = IRQ disabled, 1 = IRQ enabled. */
+                     case 0x47:    /* Bits 3-0 = 0 = IRQ edge-triggered, 1 = IRQ level-triggered. */
+                         /* Bit 6 seems to be the IRQ/SMI# toggle, 1 = IRQ, 0 = SMI#. */
++                        /* Bit 6 = 1 also blocks the flash WE# (the original BIOS clears it to write the ESCD). */
+                         dev->pci_conf_sb[func][addr] = val;
++                        flash_we_blocked = !!(val & 0x40);
+                         umc_8886_irq_recalc(dev);
+                         break;
+ 
+@@ -230,6 +233,11 @@ umc_8886_write(int func, int addr, UNUSED(int len), uint8_t val, void *priv)
+                         umc_8886_bus_recalc(dev);
+                         break;
+ 
++                    case 0x57:    /* Bits 7-6: segments C and D decoded to the flash (its lower half if 2 Mbit). */
++                        dev->pci_conf_sb[func][addr] = val;
++                        flash_cd_decode(val >> 6);
++                        break;
++
+                     case 0xa2:
+                         dev->pci_conf_sb[func][addr] &= ~val;
+                         break;
+@@ -312,6 +320,7 @@ umc_8886_reset(void *priv)
+ 
+     memset(dev->pci_conf_sb[0], 0x00, sizeof(dev->pci_conf_sb[0]));
+     memset(dev->pci_conf_sb[1], 0x00, sizeof(dev->pci_conf_sb[1]));
++    flash_cd_decode(0);
+ 
+     dev->pci_conf_sb[0][0x00] = 0x60; /* UMC */
+     dev->pci_conf_sb[0][0x01] = 0x10;
+@@ -332,6 +341,7 @@ umc_8886_reset(void *priv)
+     dev->pci_conf_sb[0][0x45] = 0x00;
+     dev->pci_conf_sb[0][0x46] = 0x10;
+     dev->pci_conf_sb[0][0x47] = 0x30;
++    flash_we_blocked = 0;
+ 
+     dev->pci_conf_sb[0][0x51] = 0x02;
+ 
+@@ -340,6 +350,7 @@ umc_8886_reset(void *priv)
          dev->pci_conf_sb[1][0x01] = 0x10;
          dev->pci_conf_sb[1][0x02] = (dev->ide_id & 0xff); /* 8886xx IDE */
          dev->pci_conf_sb[1][0x03] = ((dev->ide_id >> 8) & 0xff);
@@ -44,7 +107,7 @@ index 7350f50584e5aefacecb88f7cceb7c31479f9b4f..8d6fc2079fe3610ee11a19cad83f34a0
          dev->pci_conf_sb[1][0x08] = 0x10;
          dev->pci_conf_sb[1][0x09] = 0x8f;
 diff --git a/src/chipset/umc_hb4.c b/src/chipset/umc_hb4.c
-index cbb80c8fa5ad26c64eed8608a3f8ef9ed2abd4f8..8c63da441f9198f3ef890d010deb1d7ffc9f677f 100644
+index cbb80c8fa5ad26c64eed8608a3f8ef9ed2abd4f8..f81227bdd684f4637004af5c02695e93a2178179 100644
 --- a/src/chipset/umc_hb4.c
 +++ b/src/chipset/umc_hb4.c
 @@ -135,6 +135,22 @@ hb4_log(const char *fmt, ...)
@@ -70,7 +133,7 @@ index cbb80c8fa5ad26c64eed8608a3f8ef9ed2abd4f8..8c63da441f9198f3ef890d010deb1d7f
  typedef struct hb4_t {
      uint8_t idx;
      uint8_t access_data;
-@@ -148,6 +164,32 @@ typedef struct hb4_t {
+@@ -148,6 +164,37 @@ typedef struct hb4_t {
      uint32_t smram_base;
  
      smram_t *smram;         /* SMRAM Handler */
@@ -82,6 +145,11 @@ index cbb80c8fa5ad26c64eed8608a3f8ef9ed2abd4f8..8c63da441f9198f3ef890d010deb1d7f
 +    uint32_t      l2_size; /* 0: none installed */
 +    int           l2_banks;
 +    uint8_t      *l2_data;
++    uint8_t      *l2_tag;     /* per 16-byte line: tag, bit 7 = dirty with 7-bit tags (51h bit 0 clear) */
++    uint8_t      *l2_bad;     /* line not equal to DRAM: never filled, or DRAM/SRAM changed behind it */
++    int           l2_touched; /* 50h/5Ah written since the last settle check */
++    int           l2_settled; /* no bad line and L2 on: transparent for the CPU, the fast RAM path is back */
++    pc_timer_t    l2_timer;
 +    uint8_t       regs[3];      /* 52h, 53h, 61h */
 +    int           flat;         /* one-to-one decode: data in 86Box RAM below flat_top, laid out by flat_regs */
 +    int           overlay;      /* hb4_ram_* handlers in front of the RAM (cache-as-RAM, forced L2 hit) */
@@ -103,7 +171,7 @@ index cbb80c8fa5ad26c64eed8608a3f8ef9ed2abd4f8..8c63da441f9198f3ef890d010deb1d7f
  } hb4_t;
  
  static int shadow_bios[4]  = { (MEM_READ_EXTANY | MEM_WRITE_INTERNAL), (MEM_READ_EXTANY | MEM_WRITE_EXTANY),
-@@ -270,6 +312,379 @@ hb4_smram(hb4_t *dev)
+@@ -270,6 +317,514 @@ hb4_smram(hb4_t *dev)
      flushmmucache();
  }
  
@@ -242,39 +310,170 @@ index cbb80c8fa5ad26c64eed8608a3f8ef9ed2abd4f8..8c63da441f9198f3ef890d010deb1d7f
 +    return size ? &dev->l2_data[addr & (size - 1)] : NULL;
 +}
 +
-+/* Behind the internal cache: L2 SRAM (forced hit), flat RAM or SIMM cells; unanswered reads float high. */
++/* DRAM behind the caches: flat RAM or SIMM cells; unanswered reads float high. */
++static uint8_t
++hb4_dram_load(hb4_t *dev, uint32_t addr)
++{
++    if (dev->flat)
++        return (addr < dev->flat_top) ? ram[addr] : 0xff;
++    int64_t offset = hb4_dram_decode(dev, dev->regs, addr);
++    return (offset < 0) ? 0xff : dev->simm_data[offset];
++}
++
++static void
++hb4_dram_store(hb4_t *dev, uint32_t addr, uint8_t val)
++{
++    if (dev->flat) {
++        if (addr < dev->flat_top)
++            mem_write_ramb_page(addr, val, &pages[addr >> 12]); /* tracks code pages */
++        return;
++    }
++    int64_t offset = hb4_dram_decode(dev, dev->regs, addr);
++    if (offset >= 0)
++        dev->simm_data[offset] = val;
++}
++
++/*
++   L2 normal mode (fork), modelled while some line differs from DRAM (power-on contents, DRAM written with
++   the L2 off, forced-hit writes); with none and the L2 on it is transparent and the fast RAM path returns. Direct mapped, 16-byte lines, no valid bit; tags, dirty bits and data
++   are random at power-on. Hypothesis fitted to the real board (an L2 with its size set and bit 7 clear
++   crashed it once write-back was set; the original BIOS fills twice, off then on): with a size programmed
++   the L2 fills lines on read misses even while 50h bit 7 is clear, but serves hits only with bit 7 set;
++   in write-back (bit 6) a miss first writes a dirty line back, in write-through a fill keeps the dirty bit.
++*/
++static uint32_t
++hb4_l2_prog(const hb4_t *dev)
++{
++    uint8_t r50 = dev->pci_conf[0x50];
++    return (dev->l2_size && (r50 & 7)) ? MIN(dev->l2_size, 0x8000u << (r50 & 7)) : 0;
++}
++
++static int
++hb4_l2_active(const hb4_t *dev)
++{
++    return !dev->l2_settled && hb4_l2_prog(dev) && !hb4_l2_forced(dev);
++}
++
++static uint8_t *
++hb4_l2_slot(hb4_t *dev, uint32_t addr, uint32_t *line)
++{
++    uint32_t prog = hb4_l2_prog(dev), mask = (dev->pci_conf[0x51] & 1) ? 0xff : 0x7f;
++    uint32_t top  = dev->flat ? dev->flat_top : 0x10000000u;
++    if (!prog || (addr >= MIN((uint64_t) prog * (mask + 1), top)))
++        return NULL;
++    uint8_t *byte = hb4_l2_byte(dev, addr & ~15u);
++    if (!byte)
++        return NULL;
++    *line = (byte - dev->l2_data) >> 4;
++    return byte;
++}
++
++static void hb4_ram_update(hb4_t *dev);
++
++/* Back to modelling after a transparent period: the L2 then held what DRAM holds, line by line. */
++static void
++hb4_l2_resume(hb4_t *dev)
++{
++    uint32_t prog = hb4_l2_prog(dev);
++    uint8_t  mask = (dev->pci_conf[0x51] & 1) ? 0xff : 0x7f;
++
++    for (uint32_t line = 0; prog && (line < prog / 16); line++) {
++        for (int i = 0; i < 16; i++)
++            dev->l2_data[line * 16 + i] = hb4_dram_load(dev, (dev->l2_tag[line] & mask) * prog + line * 16 + i);
++        dev->l2_tag[line] &= mask;
++    }
++    dev->l2_settled = 0;
++}
++
++/* Every 0.5 s while modelled: once every line equals DRAM with the L2 on and its registers untouched
++   since the last check (POST done), the L2 is transparent and is left to the fast RAM path (DRAM is
++   kept current, see hb4_l2_store). Not with CR0.CD set (L1 off: a firmware L2 init in progress, which
++   reads lines, then changes DRAM behind the L2: the reads must still load tags). */
++static void
++hb4_l2_settle(void *priv)
++{
++    hb4_t   *dev  = (hb4_t *) priv;
++    uint32_t prog = hb4_l2_prog(dev);
++    int      bad  = !(dev->pci_conf[0x50] & 0x80) || !prog || hb4_l2_forced(dev) || (cr0 & (1u << 30));
++
++    for (uint32_t line = 0; !bad && (line < prog / 16); line++)
++        bad = dev->l2_bad[line];
++    if (bad || dev->l2_touched) {
++        dev->l2_touched = 0;
++        if (hb4_l2_active(dev))
++            timer_on_auto(&dev->l2_timer, 500000.0);
++        return;
++    }
++    dev->l2_settled = 1;
++    hb4_ram_update(dev);
++}
++
++static uint8_t
++hb4_l2_load(hb4_t *dev, uint32_t addr)
++{
++    uint32_t line, prog = hb4_l2_prog(dev);
++    uint8_t *data = hb4_l2_slot(dev, addr, &line), r50 = dev->pci_conf[0x50];
++    uint8_t  mask = (dev->pci_conf[0x51] & 1) ? 0xff : 0x7f, tag = (addr / prog) & mask;
++    uint32_t base = addr & (prog - 1) & ~15u;
++
++    if (!data)
++        return hb4_dram_load(dev, addr);
++    if ((r50 & 0x80) && ((dev->l2_tag[line] & mask) == tag))
++        return data[addr & 15];
++    if ((r50 & 0x40) && ((mask == 0xff) || (dev->l2_tag[line] & 0x80)))
++        for (int i = 0; i < 16; i++)
++            hb4_dram_store(dev, (dev->l2_tag[line] & mask) * prog + base + i, data[i]);
++    for (int i = 0; i < 16; i++)
++        data[i] = hb4_dram_load(dev, (addr & ~15u) + i);
++    dev->l2_tag[line] = tag | ((r50 & 0x40) ? 0 : (dev->l2_tag[line] & 0x80 & ~mask));
++    dev->l2_bad[line] = 0;
++    return data[addr & 15];
++}
++
++static void
++hb4_l2_store(hb4_t *dev, uint32_t addr, uint8_t val)
++{
++    uint32_t line, prog = hb4_l2_prog(dev);
++    uint8_t *data = hb4_l2_slot(dev, addr, &line), r50 = dev->pci_conf[0x50];
++    uint8_t  mask = (dev->pci_conf[0x51] & 1) ? 0xff : 0x7f;
++
++    int hit = data && ((dev->l2_tag[line] & mask) == ((addr / prog) & mask));
++    if (hit && !(r50 & 0x80))
++        dev->l2_bad[line] = 1;        /* DRAM changes behind the line */
++    if (hit && (r50 & 0x80)) {
++        data[addr & 15] = val;
++        if ((r50 & 0x40) && (mask != 0xff))
++            dev->l2_tag[line] |= 0x80;
++    }
++    /* also in write-back: code is fetched from DRAM directly (exec pointer), and a later write-back of
++       this line writes the same bytes; random power-on dirty lines still write garbage back */
++    hb4_dram_store(dev, addr, val);
++}
++
++/* Behind the internal cache: L2 SRAM (forced hit), the L2 model or DRAM. */
 +static uint8_t
 +hb4_load(hb4_t *dev, uint32_t addr)
 +{
-+    uint8_t *byte = NULL;
-+
-+    if (hb4_l2_forced(dev))
-+        byte = hb4_l2_byte(dev, addr);
-+    else if (dev->flat)
-+        byte = (addr < dev->flat_top) ? &ram[addr] : NULL;
-+    else {
-+        int64_t offset = hb4_dram_decode(dev, dev->regs, addr);
-+        byte           = (offset < 0) ? NULL : &dev->simm_data[offset];
++    if (hb4_l2_forced(dev)) {
++        uint8_t *byte = hb4_l2_byte(dev, addr);
++        return byte ? *byte : 0xff;
 +    }
-+    return byte ? *byte : 0xff;
++    return hb4_l2_active(dev) ? hb4_l2_load(dev, addr) : hb4_dram_load(dev, addr);
 +}
 +
 +static void
 +hb4_store(hb4_t *dev, uint32_t addr, uint8_t val)
 +{
-+    uint8_t *byte = NULL;
-+
-+    if (hb4_l2_forced(dev))
-+        byte = hb4_l2_byte(dev, addr);
-+    else if (dev->flat) {
-+        if (addr < dev->flat_top)
-+            mem_write_ramb_page(addr, val, &pages[addr >> 12]); /* tracks code pages */
-+    } else {
-+        int64_t offset = hb4_dram_decode(dev, dev->regs, addr);
-+        byte           = (offset < 0) ? NULL : &dev->simm_data[offset];
-+    }
-+    if (byte)
-+        *byte = val;
++    if (hb4_l2_forced(dev)) {
++        uint8_t *byte = hb4_l2_byte(dev, addr);
++        if (byte) {
++            *byte = val;
++            dev->l2_bad[(byte - dev->l2_data) >> 4] = 1;
++        }
++    } else if (hb4_l2_active(dev))
++        hb4_l2_store(dev, addr, val);
++    else
++        hb4_dram_store(dev, addr, val);
 +}
 +
 +static uint8_t *
@@ -390,7 +589,7 @@ index cbb80c8fa5ad26c64eed8608a3f8ef9ed2abd4f8..8c63da441f9198f3ef890d010deb1d7f
 +    uint32_t top     = hb4_region(regs, 0).size + hb4_region(regs, 1).size;
 +    int      flat    = (top >= 0x100000) && (top <= mem_size * 1024) && hb4_region_flat(dev, regs, 0) &&
 +                       hb4_region_flat(dev, regs, 1);
-+    int      overlay = dev->l1_track || dev->l1_car || hb4_l2_forced(dev);
++    int      overlay = dev->l1_track || dev->l1_car || hb4_l2_forced(dev) || hb4_l2_active(dev);
 +
 +    if ((flat != dev->flat) || (flat && memcmp(regs, dev->flat_regs, 3))) {
 +        if (dev->flat)
@@ -413,7 +612,7 @@ index cbb80c8fa5ad26c64eed8608a3f8ef9ed2abd4f8..8c63da441f9198f3ef890d010deb1d7f
 +        mem_mapping_disable(&dev->high_mapping);
 +        mem_mapping_set_addr(&ram_high_mapping, 0x100000, top - 0x100000);
 +    } else {
-+        mem_mapping_set_exec(&dev->low_mapping, flat ? ram : NULL);
++        mem_mapping_set_exec(&dev->low_mapping, flat ? ram : NULL);   /* code fetches bypass the L2 model */
 +        mem_mapping_enable(&dev->low_mapping);
 +        mem_mapping_set_addr(&dev->high_mapping, 0x100000, (flat ? top : 0x10000000) - 0x100000);
 +        mem_mapping_set_exec(&dev->high_mapping, flat ? (ram + 0x100000) : NULL);
@@ -446,6 +645,10 @@ index cbb80c8fa5ad26c64eed8608a3f8ef9ed2abd4f8..8c63da441f9198f3ef890d010deb1d7f
 +{
 +    hb4_t *dev = hb4_model;
 +    int    car = (cr0 & 0x60000000) == 0x60000000;
++
++    /* on the real chip a flush also empties the L2: logged so tests can count them (slow POST) */
++    if ((event == CPU_CACHE_WBINVD) && (dev->pci_conf[0x50] & 0x80) && hb4_l2_prog(dev))
++        fprintf(stderr, "UMC HB4: WBINVD with the L2 on\n");
 +
 +    if (event != CPU_CACHE_CR0) {
 +        memset(dev->l1_tag, 0, sizeof(dev->l1_tag));
@@ -483,11 +686,16 @@ index cbb80c8fa5ad26c64eed8608a3f8ef9ed2abd4f8..8c63da441f9198f3ef890d010deb1d7f
  static void
  hb4_write(UNUSED(int func), int addr, UNUSED(int len), uint8_t val, void *priv)
  {
-@@ -293,13 +708,21 @@ hb4_write(UNUSED(int func), int addr, UNUSED(int len), uint8_t val, void *priv)
+@@ -293,13 +848,26 @@ hb4_write(UNUSED(int func), int addr, UNUSED(int len), uint8_t val, void *priv)
              break;
  
          case 0x50:
 -            dev->pci_conf[addr]   = ((val & 0xf8) | 4); /* Hardcode Cache Size to 512KB */
++            if (dev->model && dev->l2_settled && (((val & 0x87) != (dev->pci_conf[0x50] & 0x87)) || !(val & 0x80)))
++                hb4_l2_resume(dev);
++            dev->l2_touched = 1;
++            if (dev->model && !dev->l2_settled)
++                timer_on_auto(&dev->l2_timer, 500000.0);
 +            dev->pci_conf[addr]   = dev->model ? val : ((val & 0xf8) | 4); /* Hardcode Cache Size to 512KB */
              cpu_cache_ext_enabled = !!(val & 0x80);     /* Fixes freezing issues on the HOT-433A*/
              cpu_update_waitstates();
@@ -507,7 +715,7 @@ index cbb80c8fa5ad26c64eed8608a3f8ef9ed2abd4f8..8c63da441f9198f3ef890d010deb1d7f
              break;
  
          case 0x54 ... 0x55:
-@@ -307,11 +730,17 @@ hb4_write(UNUSED(int func), int addr, UNUSED(int len), uint8_t val, void *priv)
+@@ -307,11 +875,22 @@ hb4_write(UNUSED(int func), int addr, UNUSED(int len), uint8_t val, void *priv)
              hb4_shadow(dev);
              break;
  
@@ -518,6 +726,11 @@ index cbb80c8fa5ad26c64eed8608a3f8ef9ed2abd4f8..8c63da441f9198f3ef890d010deb1d7f
              break;
  
 +        case 0x5a:
++            if (dev->model && dev->l2_settled && (val & 0x40))
++                hb4_l2_resume(dev);
++            dev->l2_touched = 1;
++            if (dev->model && !dev->l2_settled)
++                timer_on_auto(&dev->l2_timer, 500000.0);
 +            dev->pci_conf[addr] = val;
 +            if (dev->model)
 +                hb4_ram_update(dev);
@@ -526,7 +739,7 @@ index cbb80c8fa5ad26c64eed8608a3f8ef9ed2abd4f8..8c63da441f9198f3ef890d010deb1d7f
          case 0x5c ... 0x5d:
          case 0x60:
              dev->pci_conf[addr] = val;
-@@ -320,6 +749,8 @@ hb4_write(UNUSED(int func), int addr, UNUSED(int len), uint8_t val, void *priv)
+@@ -320,6 +899,8 @@ hb4_write(UNUSED(int func), int addr, UNUSED(int len), uint8_t val, void *priv)
  
          case 0x61:
              dev->pci_conf[addr] = val;
@@ -535,7 +748,7 @@ index cbb80c8fa5ad26c64eed8608a3f8ef9ed2abd4f8..8c63da441f9198f3ef890d010deb1d7f
              break;
  
          case 0x62:
-@@ -385,6 +816,13 @@ hb4_reset(void *priv)
+@@ -385,6 +966,13 @@ hb4_reset(void *priv)
      cpu_update_waitstates();
  
      memset(dev->mem_state, 0x00, sizeof(dev->mem_state));
@@ -549,7 +762,7 @@ index cbb80c8fa5ad26c64eed8608a3f8ef9ed2abd4f8..8c63da441f9198f3ef890d010deb1d7f
  }
  
  static void
-@@ -392,6 +830,16 @@ hb4_close(void *priv)
+@@ -392,6 +980,16 @@ hb4_close(void *priv)
  {
      hb4_t *dev = (hb4_t *) priv;
  
@@ -566,7 +779,17 @@ index cbb80c8fa5ad26c64eed8608a3f8ef9ed2abd4f8..8c63da441f9198f3ef890d010deb1d7f
      smram_del(dev->smram);
      free(dev);
  }
-@@ -410,11 +858,104 @@ hb4_init(UNUSED(const device_t *info))
+@@ -403,18 +1001,125 @@ hb4_init(UNUSED(const device_t *info))
+ 
+     pci_add_card(PCI_ADD_NORTHBRIDGE, hb4_read, hb4_write, dev, &dev->pci_slot); /* Device 10: UMC 8881x */
+ 
+-    /* Port 92 */
+-    device_add(&port_92_pci_device);
++    /* Port 92: A20 only. On the real MB-8433UUD-A bit 0 does not reset (Ctrl+Alt+Del hung with a BIOS that
++       only used it; the original BIOS resets through the keyboard controller). */
++    port_92_set_features(device_add(&port_92_pci_device), 0, 1);
+ 
+     /* SMRAM */
      dev->smram = smram_add();
  
      dev->smram_base = 0x000a0000;
@@ -587,8 +810,10 @@ index cbb80c8fa5ad26c64eed8608a3f8ef9ed2abd4f8..8c63da441f9198f3ef890d010deb1d7f
 +        dev->l2_size   = device_get_config_int("l2_cache") << 10;
 +        dev->l2_banks  = device_get_config_int("l2_banks");
 +        dev->simm_data = calloc(1, capacity);
-+        dev->l2_data   = calloc(1, 1 << 20);
-+        if (!dev->simm_data || !dev->l2_data)
++        dev->l2_data   = malloc(1 << 20);
++        dev->l2_tag    = malloc(1 << 16);
++        dev->l2_bad    = malloc(1 << 16);
++        if (!dev->simm_data || !dev->l2_data || !dev->l2_tag || !dev->l2_bad)
 +            fatal("UMC HB4: out of memory for %u MB of SIMMs\n", capacity >> 20);
 +        mem_mapping_add(&dev->low_mapping, 0, 0xa0000, hb4_ram_readb, hb4_ram_readw, hb4_ram_readl,
 +                        hb4_ram_writeb, hb4_ram_writew, hb4_ram_writel, NULL, 0, dev);
@@ -602,7 +827,18 @@ index cbb80c8fa5ad26c64eed8608a3f8ef9ed2abd4f8..8c63da441f9198f3ef890d010deb1d7f
 +            mem_mapping_add(&dev->stuck_mapping, dev->stuck_addr & ~0xfff, 0x1000, hb4_stuck_readb,
 +                            hb4_stuck_readw, hb4_stuck_readl, hb4_ram_writeb, hb4_ram_writew, hb4_ram_writel,
 +                            NULL, 0, dev);
++        /* power-on SRAM contents: random, reproducible with BOX86_L2_SEED */
++        const char *seed = getenv("BOX86_L2_SEED");
++        uint64_t    x    = seed ? strtoull(seed, NULL, 0) : 1;
++        for (uint32_t i = 0; i < (1 << 20); i++) {
++            x = x * 6364136223846793005ULL + 1442695040888963407ULL;
++            dev->l2_data[i] = x >> 56;
++            if (i < (1 << 16))
++                dev->l2_tag[i] = x >> 48;
++        }
++        memset(dev->l2_bad, 1, 1 << 16);
 +        timer_add(&dev->l1_timer, hb4_l1_timeout, dev, 0);
++        timer_add(&dev->l2_timer, hb4_l2_settle, dev, 0);
 +        hb4_model      = dev;
 +        cpu_cache_hook = hb4_cache_event;
 +    }
@@ -671,13 +907,25 @@ index cbb80c8fa5ad26c64eed8608a3f8ef9ed2abd4f8..8c63da441f9198f3ef890d010deb1d7f
  const device_t umc_hb4_device = {
      .name          = "UMC HB4(8881F)",
      .internal_name = "umc_hb4",
-@@ -426,5 +967,5 @@ const device_t umc_hb4_device = {
+@@ -426,5 +1131,5 @@ const device_t umc_hb4_device = {
      .available     = NULL,
      .speed_changed = NULL,
      .force_redraw  = NULL,
 -    .config        = NULL
 +    .config        = hb4_config
  };
+diff --git a/src/cpu/386_common.h b/src/cpu/386_common.h
+index 1efda9d4f1a703f0a67937e34581ea07b15a94ad..461e6a4563dc36a56fcbe3babd67dab8458bc655 100644
+--- a/src/cpu/386_common.h
++++ b/src/cpu/386_common.h
+@@ -539,6 +539,7 @@ fastreadl_fetch(uint32_t a)
+             pccache2 = t;
+             pccache  = a >> 12;
+         }
++        flash_fetch_count += pccache_flash;
+ #    if (defined __amd64__ || defined _M_X64 || defined __aarch64__ || defined _M_ARM64)
+         return *((uint32_t *) (((uintptr_t) &pccache2[a] & 0x00000000ffffffffULL) | ((uintptr_t) &pccache2[0] & 0xffffffff00000000ULL)));
+ #    else
 diff --git a/src/cpu/cpu.c b/src/cpu/cpu.c
 index 9e93f45554e1f48f58e9d5b1882ad51ea170f792..652835663a573c53fa6a760d983565c07b273edc 100644
 --- a/src/cpu/cpu.c
@@ -704,6 +952,34 @@ index 6b775e5690fc75b6e8f15f4c4c15e787894fd193..93d980169bc1645c7aa972751a093878
  extern int cpu_cache_ext_enabled;
  extern int cpu_isa_speed;
  extern int cpu_pci_speed;
+diff --git a/src/cpu/cpu_table.c b/src/cpu/cpu_table.c
+index fc6429300c57c31b0bad4d705befb70ccb4304b3..373c7951eb18dce4d1d790cca2df2ca53340da71 100644
+--- a/src/cpu/cpu_table.c
++++ b/src/cpu/cpu_table.c
+@@ -3211,6 +3211,23 @@ const cpu_family_t cpu_families[] = {
+         .name          = "Am5x86",
+         .internal_name = "am5x86",
+         .cpus          = (const CPU[]) {
++            { /* 3 x 40 MHz, as the MB-8433UUD-A of the newBIOS project runs it (CLKMUL low) */
++                .name               = "120 (3x40)",
++                .cpu_type           = CPU_ENH_Am486DX,
++                .fpus               = fpus_internal,
++                .rspeed             = 120000000,
++                .multi              = 3.0,
++                .voltage            = 3450,
++                .edx_reset          = 0x4e0,
++                .cpuid_model        = 0x4e0,
++                .cyrix_id           = 0,
++                .cpu_flags          = CPU_SUPPORTS_DYNAREC,
++                .mem_read_cycles    = 18,
++                .mem_write_cycles   = 18,
++                .cache_read_cycles  = 9,
++                .cache_write_cycles = 9,
++                .atclk_div          = 15
++            },
+             {
+                 .name               = "133 (P75)",
+                 .cpu_type           = CPU_ENH_Am486DX,
 diff --git a/src/cpu/x86.c b/src/cpu/x86.c
 index a262328b75c344c1fb7f31dc6985ae1351023575..c13ddd5a5e85a51ad8a79077d946d67e3f324a51 100644
 --- a/src/cpu/x86.c
@@ -794,6 +1070,54 @@ index a1126f8079d26be2ec8b15b23592b253fd1a0865..b09e2212777a3b388fdad39174d8acf8
              break;
          case 2:
              cr2 = cpu_state.regs[cpu_rm].l;
+diff --git a/src/device/kbc_at.c b/src/device/kbc_at.c
+index 80bd5a0c4c2d9899cc0ba5dc096408250baed4fb..5ec8c965c8474c1862bf787bd214669532d00f0c 100644
+--- a/src/device/kbc_at.c
++++ b/src/device/kbc_at.c
+@@ -132,6 +132,9 @@ typedef struct atkbc_t {
+     pc_timer_t kbc_poll_timer;
+     pc_timer_t kbc_dev_poll_timer;
+ 
++    /* Keyboard still in its power-on self test (BOX86_KBD_POWERON_MS): bytes sent to it time out. */
++    int kbd_powering;
++
+     /* P2 pulse callback timer. */
+     pc_timer_t pulse_cb;
+ 
+@@ -446,7 +449,7 @@ kbc_ibf_process(atkbc_t *dev)
+         kbc_at_process_cmd(dev);
+     else {
+         set_enable_kbd(dev, 1);
+-        if ((dev->ports[0] != NULL) && (dev->ports[0]->priv != NULL)) {
++        if ((dev->ports[0] != NULL) && (dev->ports[0]->priv != NULL) && !dev->kbd_powering) {
+             dev->ports[0]->wantcmd = 1;
+             dev->ports[0]->dat = dev->ib;
+             dev->state         = STATE_SEND_KBD;
+@@ -736,6 +739,7 @@ kbc_at_dev_poll(void *priv)
+     atkbc_t *dev = (atkbc_t *) priv;
+ 
+     timer_advance_u64(&dev->kbc_dev_poll_timer, (100ULL * TIMER_USEC));
++    dev->kbd_powering = 0;
+ 
+     if ((kbc_at_ports[0] != NULL) && (kbc_at_ports[0]->priv != NULL))
+         kbc_at_ports[0]->poll(kbc_at_ports[0]->priv);
+@@ -2910,6 +2914,16 @@ kbc_at_init(const device_t *info)
+ 
+     timer_add(&dev->kbc_dev_poll_timer, kbc_at_dev_poll, dev, 1);
+ 
++    /* Power-on time of a real 8042 (firmware start) and keyboard (self test, AAh), for firmware tests: the
++       controller does not run, the keyboard neither answers nor sends until then. */
++    const char *kbc_ms = getenv("BOX86_KBC_POWERON_MS"), *kbd_ms = getenv("BOX86_KBD_POWERON_MS");
++    if (kbc_ms && atoi(kbc_ms) > 0)             /* microseconds as a double: 64-bit timer units overflow */
++        timer_on_auto(&dev->kbc_poll_timer, atoi(kbc_ms) * 1000.0);
++    if (kbd_ms && atoi(kbd_ms) > 0) {
++        dev->kbd_powering = 1;
++        timer_on_auto(&dev->kbc_dev_poll_timer, atoi(kbd_ms) * 1000.0);
++    }
++
+     dev->write_cmd_data_ven = NULL;
+     dev->write_cmd_ven      = NULL;
+ 
 diff --git a/src/device/postcard.c b/src/device/postcard.c
 index f842cbb338f9527099a3a53bb83d7c3359e3b786..bf9c096af36fcc9ab4d605b2e51be3da39dce484 100644
 --- a/src/device/postcard.c
@@ -1013,6 +1337,27 @@ index 4308a893685443e12b91fceed2e2a64d53f758cf..54ee4d2c5e98681df68a8dcc59a7f28b
  extern void pc_start(void);
  extern void pc_onesec(void);
  #ifdef _WIN32
+diff --git a/src/include/86box/flash.h b/src/include/86box/flash.h
+index a1f9b872035e3fe666c3a6a737269c2eb35fe46c..a9eed6f6df930ff797c3996f910ff18380dbcc23 100644
+--- a/src/include/86box/flash.h
++++ b/src/include/86box/flash.h
+@@ -26,6 +26,8 @@ extern const device_t catalyst_flash_device;
+ 
+ extern const device_t intel_flash_bxt_ami_device;
+ extern const device_t intel_flash_bxt_device;
++extern int flash_we_blocked;   /* set by the chipset: flash WE# gated off */
++extern void flash_cd_decode(int bits);   /* UM8886 57h bits 7-6: lower 128 KiB of a 2 Mbit flash at FFFC0000/FFFD0000 */
+ extern const device_t intel_flash_bxb_device;
+ 
+ extern const device_t sst_flash_29ee010_device;
+@@ -35,6 +37,7 @@ extern const device_t winbond_flash_w29c512_device;
+ extern const device_t winbond_flash_w29c010_device;
+ extern const device_t winbond_flash_w29c011a_device;
+ extern const device_t winbond_flash_w29c020_device;
++extern const device_t winbond_flash_w49f002a_device;
+ extern const device_t winbond_flash_w29c040_device;
+ 
+ extern const device_t sst_flash_39sf512_device;
 diff --git a/src/include/86box/hdc_ide.h b/src/include/86box/hdc_ide.h
 index 7d7d0c1e36cf118b15878c736ed89b5eafe8ee13..0c2d1632521bd82a2722733c894face1266d011d 100644
 --- a/src/include/86box/hdc_ide.h
@@ -1028,6 +1373,20 @@ index 7d7d0c1e36cf118b15878c736ed89b5eafe8ee13..0c2d1632521bd82a2722733c894face1
      uint32_t tracks;
      uint32_t spt;
      uint32_t hpc;
+diff --git a/src/include/86box/mem.h b/src/include/86box/mem.h
+index b637ff67383244f734391d4f9113369402ab3e22..cd98f933dcfdc57a6b82a06b2d28594ceedf2071 100644
+--- a/src/include/86box/mem.h
++++ b/src/include/86box/mem.h
+@@ -351,6 +351,9 @@ extern void     writememll_no_mmut_2386(uint32_t addr, uint32_t *a64, uint32_t v
+ extern void     do_mmutranslate_2386(uint32_t addr, uint32_t *a64, int num, int write);
+ 
+ extern uint8_t *getpccache(uint32_t a);
++extern int      pccache_flash;
++extern uint64_t flash_fetch_count;
++extern uint64_t flash_read_bytes;
+ extern uint64_t mmutranslatereal(uint32_t addr, int rw);
+ extern uint32_t mmutranslatereal32(uint32_t addr, int rw);
+ extern void     addreadlookup(uint32_t virt, uint32_t phys);
 diff --git a/src/include/86box/network.h b/src/include/86box/network.h
 index 0e82a700bf222936cb49a51762f3dba828b34dab..ef407e1c25e3af66d48f8e1efca7c81be2eb17c7 100644
 --- a/src/include/86box/network.h
@@ -1043,8 +1402,359 @@ index 0e82a700bf222936cb49a51762f3dba828b34dab..ef407e1c25e3af66d48f8e1efca7c81b
  
  /* DEC Tulip */
  extern const device_t dec_tulip_device;
+diff --git a/src/include/86box/usb_uhci.h b/src/include/86box/usb_uhci.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..035245c6a6fc48f17bc0eb2440c83ab31aab6fba
+--- /dev/null
++++ b/src/include/86box/usb_uhci.h
+@@ -0,0 +1,6 @@
++/* UHCI controller with a USB keyboard and disk for firmware tests (usb_uhci.c). */
++#ifndef EMU_USB_UHCI_H
++#define EMU_USB_UHCI_H
++extern const device_t usb_uhci_via_device;
++extern void usb_uhci_key(int mods_usage);   /* modifiers << 8 | HID usage: pressed, then released */
++#endif
+diff --git a/src/machine/m_at_socket3_pci.c b/src/machine/m_at_socket3_pci.c
+index bf269c3c5da5e52a4189703c15ed406ff0d3ef68..e3c3ee7ce33f73a790330e449618f8321a3ccd1e 100644
+--- a/src/machine/m_at_socket3_pci.c
++++ b/src/machine/m_at_socket3_pci.c
+@@ -15,6 +15,7 @@
+ #include <stdarg.h>
+ #include <stdint.h>
+ #include <stdio.h>
++#include <stdlib.h>
+ #include <string.h>
+ #include <wchar.h>
+ #define HAVE_STDARG_H
+@@ -42,6 +43,7 @@
+ #include <86box/port_92.h>
+ #include <86box/video.h>
+ #include <86box/flash.h>
++#include <86box/usb_uhci.h>
+ #include <86box/scsi_ncr53c8xx.h>
+ #include <86box/hwm.h>
+ #include <86box/machine.h>
+@@ -49,6 +51,29 @@
+ #include <86box/sound.h>
+ 
+ /* ALi M1429G */
++/* The board's chip is an Intel P28F001BX-T. BOX86_FLASH: w29c010 (the chip 86Box used before), sst39sf010 (a JEDEC
++   chip newBIOS does not know, as an SST39SF010A put in its place), w49f002a (2 Mbit: a 256 KiB image, its lower
++   half decoded at FFFC0000 by the UM8886, 57h bits 7-6). */
++static const device_t *
++board_flash_device(void)
++{
++    const char *flash = getenv("BOX86_FLASH");
++    if (flash && !strcmp(flash, "w29c010"))
++        return &winbond_flash_w29c010_device;
++    if (flash && !strcmp(flash, "sst39sf010"))
++        return &sst_flash_39sf010_device;
++    if (flash && !strcmp(flash, "w49f002a"))
++        return &winbond_flash_w49f002a_device;
++    return &intel_flash_bxt_device;
++}
++
++static int
++board_flash_2mbit(void)
++{
++    const char *flash = getenv("BOX86_FLASH");
++    return flash && !strcmp(flash, "w49f002a");
++}
++
+ int
+ machine_at_ms4134_init(const machine_t *model)
+ {
+@@ -1181,7 +1206,7 @@ machine_at_84xxuuda_init(const machine_t *model)
+     int ret;
+ 
+     ret = bios_load_linear("roms/machines/84xxuuda/uud0520s.bin",
+-                           0x000e0000, 131072, 0);
++                           board_flash_2mbit() ? 0x000c0000 : 0x000e0000, board_flash_2mbit() ? 262144 : 131072, 0);
+ 
+     if (bios_only || !ret)
+         return ret;
+@@ -1198,7 +1223,10 @@ machine_at_84xxuuda_init(const machine_t *model)
+     device_add(&umc_hb4_device);
+     device_add(&umc_8886bf_device);
+     device_add_params(&um866x_device, (void *) UM8663BF);
+-    device_add(&winbond_flash_w29c010_device);
++    device_add(board_flash_device());
++    /* The operator's VIA USB card, for tests: BOX86_USB, BOX86_USB_KBD (keyboard), BOX86_USB_DISK (image) */
++    if (getenv("BOX86_USB") || getenv("BOX86_USB_KBD") || getenv("BOX86_USB_DISK"))
++        device_add(&usb_uhci_via_device);
+ 
+     return ret;
+ }
+@@ -1553,7 +1581,7 @@ machine_at_486vipio2_init(const machine_t *model)
+ 
+     device_add_params(machine_get_kbc_device(machine), (void *) model->kbc_params);
+ 
+-    device_add(&winbond_flash_w29c010_device);
++    device_add(board_flash_device());
+ 
+     return ret;
+ }
+diff --git a/src/mem/intel_flash.c b/src/mem/intel_flash.c
+index 68929f8098339e733055f1e22f0a1e222dd6e67f..d4d92cac4d7f721aaacbfe5dab186d545b9ea53d 100644
+--- a/src/mem/intel_flash.c
++++ b/src/mem/intel_flash.c
+@@ -82,6 +82,8 @@ flash_read(uint32_t addr, void *priv)
+     const flash_t *dev = (flash_t *) priv;
+     uint8_t        ret = 0xff;
+ 
++    flash_read_bytes++;
++
+     if (dev->flags & FLAG_INV_A16)
+         addr ^= 0x10000;
+     addr &= biosmask;
+@@ -114,6 +116,7 @@ flash_readw(uint32_t addr, void *priv)
+     const uint16_t *q;
+     uint16_t        ret = 0xffff;
+ 
++    flash_read_bytes += 2;
+     if (dev->flags & FLAG_INV_A16)
+         addr ^= 0x10000;
+     addr &= biosmask;
+@@ -151,6 +154,7 @@ flash_readl(uint32_t addr, void *priv)
+     flash_t        *dev = (flash_t *) priv;
+     const uint32_t *q;
+ 
++    flash_read_bytes += 4;
+     if (dev->flags & FLAG_INV_A16)
+         addr ^= 0x10000;
+     addr &= biosmask;
+@@ -160,6 +164,17 @@ flash_readl(uint32_t addr, void *priv)
+     return *q;
+ }
+ 
++/* Board signals: the chipset's flash write enable (UMC IBC47 bit 6 = 1 blocks WE#), and VPP: without
++   12 V (BOX86_FLASH_VPP=5, JP13) program/erase fail with the VPP status bit, commands still switch modes. */
++int flash_we_blocked;
++
++static int
++flash_vpp_low(void)
++{
++    const char *v = getenv("BOX86_FLASH_VPP");
++    return v && !strcmp(v, "5");
++}
++
+ static void
+ flash_write(uint32_t addr, uint8_t val, void *priv)
+ {
+@@ -170,12 +185,19 @@ flash_write(uint32_t addr, uint8_t val, void *priv)
+     else if (biosmask == 0x3ffff)
+         bb_mask &= 0xffffc000;
+ 
++    if (flash_we_blocked)
++        return;
+     if (dev->flags & FLAG_INV_A16)
+         addr ^= 0x10000;
+     addr &= biosmask;
+ 
+     switch (dev->command) {
+         case CMD_ERASE_SETUP:
++            if (val == CMD_ERASE_CONFIRM && flash_vpp_low()) {
++                dev->status  = 0x88;
++                dev->command = CMD_READ_STATUS;
++                break;
++            }
+             if (val == CMD_ERASE_CONFIRM) {
+                 for (uint8_t i = 0; i < 6; i++) {
+                     if ((i == dev->program_addr) && (addr >= dev->block_start[i]) && (addr <= dev->block_end[i]))
+@@ -189,10 +211,11 @@ flash_write(uint32_t addr, uint8_t val, void *priv)
+ 
+         case CMD_PROGRAM_SETUP:
+         case CMD_PROGRAM_SETUP_ALT:
+-            if (((addr & bb_mask) != (dev->block_start[6] & bb_mask)) && (addr == dev->program_addr))
+-                dev->array[addr] = val;
++            if (((addr & bb_mask) != (dev->block_start[6] & bb_mask)) && (addr == dev->program_addr)
++                && !flash_vpp_low())
++                dev->array[addr] &= val;
+             dev->command = CMD_READ_STATUS;
+-            dev->status  = 0x80;
++            dev->status  = flash_vpp_low() ? 0x88 : 0x80;
+             break;
+ 
+         default:
+@@ -221,6 +244,8 @@ flash_write(uint32_t addr, uint8_t val, void *priv)
+ static void
+ flash_writew(uint32_t addr, uint16_t val, void *priv)
+ {
++    if (flash_we_blocked)
++        return;
+     flash_t *dev = (flash_t *) priv;
+     uint32_t bb_mask = biosmask & 0xffffe000;
+     if (biosmask == 0x7ffff)
+diff --git a/src/mem/mem.c b/src/mem/mem.c
+index 5c10282df8eb758b5ea753c02b1e80869edff53a..de8e5e2c89afe2d6ce5a2fdf66d232b07c8372fd 100644
+--- a/src/mem/mem.c
++++ b/src/mem/mem.c
+@@ -633,6 +633,12 @@ addwritelookup(uint32_t virt, uint32_t phys)
+     cycles -= 9;
+ }
+ 
++/* Firmware tests (testctl "flash"): instructions fetched from and bytes read by the CPU from the BIOS flash.
++   Code fetches are counted by the interpreter only (cpu_use_dynarec = 0). */
++int      pccache_flash;
++uint64_t flash_fetch_count;
++uint64_t flash_read_bytes;
++
+ uint8_t *
+ getpccache(uint32_t a)
+ {
+@@ -650,7 +656,10 @@ getpccache(uint32_t a)
+     }
+     a64 &= rammask;
+ 
++    pccache_flash = 0;
+     if (_mem_exec[a64 >> MEM_GRANULARITY_BITS]) {
++        pccache_flash = read_mapping[a64 >> MEM_GRANULARITY_BITS] &&
++                        (read_mapping[a64 >> MEM_GRANULARITY_BITS]->flags & MEM_MAPPING_ROMCS);
+         if (is286) {
+             if (read_mapping[a64 >> MEM_GRANULARITY_BITS] && (read_mapping[a64 >> MEM_GRANULARITY_BITS]->flags & MEM_MAPPING_ROM_WS))
+                 cpu_prefetch_cycles = cpu_rom_prefetch_cycles;
+diff --git a/src/mem/sst_flash.c b/src/mem/sst_flash.c
+index 80793cb9ab6793257185d3c9ec34a32f6102d4bb..2d1785495cd032cc8eba1efdd0d7406ced608046 100644
+--- a/src/mem/sst_flash.c
++++ b/src/mem/sst_flash.c
+@@ -28,6 +28,7 @@
+ #include <86box/nvr.h>
+ #include <86box/plat.h>
+ #include <86box/m_xt_xi8088.h>
++#include <86box/flash.h>
+ 
+ typedef struct sst_t {
+     uint8_t manufacturer;
+@@ -130,6 +131,7 @@ static char flash_path[1024];
+ #define W29C011A    0xc100
+ #define W29C020     0x4500
+ #define W29C040     0x4600
++#define W49F002A    0x0b00
+ 
+ #define AMD         0x01 /* AMD Manufacturer's ID */
+ #define AMD29F010A  0x2000
+@@ -165,6 +167,15 @@ sst_sector_erase(sst_t *dev, uint32_t addr)
+             memset(&dev->array[0x3a000], 0xff, 8192);
+         else if ((base >= 0x3c000) && (base <= 0x3ffff))
+             memset(&dev->array[0x3c000], 0xff, 16384);
++    } else if ((dev->manufacturer == WINBOND) && (dev->id == (W49F002A >> 8))) {
++        /* W49F002A/U, top boot: 128K, 96K, two 8K parameter blocks, the 16K boot block */
++        static const uint32_t start[6] = { 0x00000, 0x20000, 0x38000, 0x3a000, 0x3c000, 0x40000 };
++        base = addr & 0x3ffff;
++        for (int i = 0; i < 5; i++)
++            if (base < start[i + 1]) {
++                memset(&dev->array[start[i]], 0xff, start[i + 1] - start[i]);
++                break;
++            }
+     } else if ((dev->manufacturer == AMD) && (dev->id == 0x20)) {
+         base = addr & biosmask;
+ 
+@@ -360,6 +371,9 @@ sst_write(uint32_t addr, uint8_t val, void *priv)
+         addr1 >>= 4;
+     }
+ 
++    if (flash_we_blocked)          /* the chipset gates WE# off (UM8886 IBC47 bit 6) */
++        return;
++
+     switch (dev->command_state) {
+         case 0:
+         case 3:
+@@ -406,7 +420,10 @@ sst_write(uint32_t addr, uint8_t val, void *priv)
+             if (dev->is_39) {
+                 dev->command_state = 0;
+ 
+-                dev->array[addr & dev->mask] = val;
++                if ((dev->manufacturer == WINBOND) && (dev->id == (W49F002A >> 8)))
++                    dev->array[addr & dev->mask] &= val;    /* programming only clears bits */
++                else
++                    dev->array[addr & dev->mask] = val;
+                 dev->dirty                   = 1;
+             } else {
+                 dev->command_state++;
+@@ -521,6 +538,31 @@ sst_add_mappings(sst_t *dev)
+     }
+ }
+ 
++/* Segments C and D of a 2 Mbit chip (its lower 128 KiB) at FFFC0000-FFFDFFFF: decoded unless a chipset that
++   gates them (UM8886 57h bits 7-6) says otherwise. */
++static sst_t *sst_current;
++static int    sst_cd_bits = 3;
++
++static void
++sst_cd_apply(void)
++{
++    if (!sst_current || (sst_current->size != SIZE_2M))
++        return;
++    for (int i = 0; i < 2; i++) {
++        if (sst_cd_bits & (2 >> i))
++            mem_mapping_enable(&sst_current->mapping_h[i]);
++        else
++            mem_mapping_disable(&sst_current->mapping_h[i]);
++    }
++}
++
++void
++flash_cd_decode(int bits)
++{
++    sst_cd_bits = bits & 3;
++    sst_cd_apply();
++}
++
+ static void *
+ sst_init(const device_t *info)
+ {
+@@ -539,8 +581,8 @@ sst_init(const device_t *info)
+     dev->id           = (info->local >> 8) & 0xff;
+     dev->has_bbp      = (dev->manufacturer == WINBOND) && ((info->local & 0xff00) >= W29C020);
+     dev->is_39        = (dev->manufacturer == SST) && ((info->local & 0xff00) >= SST39SF512);
+-    if (dev->manufacturer == AMD)
+-        dev->is_39    = 1;
++    if ((dev->manufacturer == AMD) || ((dev->manufacturer == WINBOND) && (dev->id == (W49F002A >> 8))))
++        dev->is_39    = 1;   /* JEDEC byte program and sector erase */
+ 
+     dev->size = info->local & 0xffff0000;
+     if ((dev->size == 0x20000) && ((machines[machine].init == machine_xt_xi8088_init) && !xi8088_bios_128kb()))
+@@ -552,6 +594,8 @@ sst_init(const device_t *info)
+     dev->bbp_first_8k = dev->bbp_last_8k = 0xfe;
+ 
+     sst_add_mappings(dev);
++    sst_current = dev;
++    sst_cd_apply();
+ 
+     fp = nvr_fopen(flash_path, "rb");
+     if (fp) {
+@@ -573,6 +617,8 @@ sst_close(void *priv)
+     FILE  *fp;
+     sst_t *dev = (sst_t *) priv;
+ 
++    if (sst_current == dev)
++        sst_current = NULL;
+     if (dev->dirty) {
+         fp = nvr_fopen(flash_path, "wb");
+         if (fp != NULL) {
+@@ -657,6 +703,20 @@ const device_t winbond_flash_w29c011a_device = {
+     .config        = NULL
+ };
+ 
++const device_t winbond_flash_w49f002a_device = {
++    .name          = "Winbond W49F002A Flash BIOS",
++    .internal_name = "winbond_flash_w49f002a",
++    .flags         = 0,
++    .local         = WINBOND | W49F002A | SIZE_2M,
++    .init          = sst_init,
++    .close         = sst_close,
++    .reset         = NULL,
++    .available     = NULL,
++    .speed_changed = NULL,
++    .force_redraw  = NULL,
++    .config        = NULL
++};
++
+ const device_t winbond_flash_w29c020_device = {
+     .name          = "Winbond W29C020 Flash BIOS",
+     .internal_name = "winbond_flash_w29c020",
 diff --git a/src/network/net_rtl8139.c b/src/network/net_rtl8139.c
-index 0daf25a6a30d2e667f9a6c3d921ab279d6562fd3..bdf369c55b8d0190452f1c61bdab6fcd968a490a 100644
+index 0daf25a6a30d2e667f9a6c3d921ab279d6562fd3..c07b21a6798fd67c8640d33dc72e513e82cda01a 100644
 --- a/src/network/net_rtl8139.c
 +++ b/src/network/net_rtl8139.c
 @@ -6,7 +6,8 @@
@@ -1089,12 +1799,14 @@ index 0daf25a6a30d2e667f9a6c3d921ab279d6562fd3..bdf369c55b8d0190452f1c61bdab6fcd
  enum ClearBitMasks {
      MultiIntrClear = 0xF000,
      ChipCmdClear   = 0xE2,
-@@ -463,12 +478,20 @@ struct RTL8139State {
+@@ -463,12 +478,22 @@ struct RTL8139State {
      pc_timer_t timer;
  
      mem_mapping_t bar_mem;
 +    rom_t         boot_rom;
 +    uint32_t      boot_rom_size;
++    uint16_t      device_id;   /* PCI device ID: clones differ, e.g. 10ec:8039 */
++    int           no_cplus;    /* a plain RTL8139C: no C+ command register (drivers use the legacy mode) */
 +    uint8_t       rom_bar[4];
  
      /* Support migration to/from old versions */
@@ -1110,7 +1822,7 @@ index 0daf25a6a30d2e667f9a6c3d921ab279d6562fd3..bdf369c55b8d0190452f1c61bdab6fcd
  };
  
  /* Writes tally counters to memory via DMA */
-@@ -510,16 +533,17 @@ rtl8139_transmitter_enabled(RTL8139State *s)
+@@ -510,16 +535,17 @@ rtl8139_transmitter_enabled(RTL8139State *s)
      return s->bChipCmdState & CmdTxEnb;
  }
  
@@ -1130,7 +1842,7 @@ index 0daf25a6a30d2e667f9a6c3d921ab279d6562fd3..bdf369c55b8d0190452f1c61bdab6fcd
  }
  
  static void
-@@ -832,7 +856,9 @@ rtl8139_do_receive(void *priv, uint8_t *buf, int size_)
+@@ -832,7 +858,9 @@ rtl8139_do_receive(void *priv, uint8_t *buf, int size_)
              return size_;
          }
  
@@ -1141,7 +1853,7 @@ index 0daf25a6a30d2e667f9a6c3d921ab279d6562fd3..bdf369c55b8d0190452f1c61bdab6fcd
  
          /* write VLAN info to descriptor variables. */
          if (s->CpCmd & CPlusRxVLAN && bswap16(AS_U16(buf[ETH_ALEN * 2])) == 0x8100) {
-@@ -924,14 +950,14 @@ rtl8139_do_receive(void *priv, uint8_t *buf, int size_)
+@@ -924,14 +952,14 @@ rtl8139_do_receive(void *priv, uint8_t *buf, int size_)
  
          /* set received packet type flags */
          if (packet_header & RxBroadcast)
@@ -1160,7 +1872,7 @@ index 0daf25a6a30d2e667f9a6c3d921ab279d6562fd3..bdf369c55b8d0190452f1c61bdab6fcd
          rxdw0 |= (size + 4);
  
          /* update ring data */
-@@ -1014,9 +1040,24 @@ rtl8139_reset_rxring(RTL8139State *s, uint32_t bufferSize)
+@@ -1014,9 +1042,24 @@ rtl8139_reset_rxring(RTL8139State *s, uint32_t bufferSize)
      s->RxBufAddr    = 0;
  }
  
@@ -1185,7 +1897,7 @@ index 0daf25a6a30d2e667f9a6c3d921ab279d6562fd3..bdf369c55b8d0190452f1c61bdab6fcd
      s->BasicModeStatus = 0x7809;
      s->BasicModeStatus |= 0x0020; /* autonegotiation completed */
      /* preserve link state */
-@@ -1063,7 +1104,7 @@ rtl8139_reset(void *priv)
+@@ -1063,7 +1106,7 @@ rtl8139_reset(void *priv)
  //    s->TxConfig |= HW_REVID(1, 0, 0, 0, 0, 0, 0); // RTL-8139  HasHltClk
      s->clock_enabled = 0;
  #else
@@ -1194,7 +1906,7 @@ index 0daf25a6a30d2e667f9a6c3d921ab279d6562fd3..bdf369c55b8d0190452f1c61bdab6fcd
      s->clock_enabled = 1;
  #endif
  
-@@ -1076,7 +1117,7 @@ rtl8139_reset(void *priv)
+@@ -1076,7 +1119,7 @@ rtl8139_reset(void *priv)
      s->Config5 = 0x0;
  
      s->CpCmd         = 0x0; /* reset C+ mode */
@@ -1203,7 +1915,16 @@ index 0daf25a6a30d2e667f9a6c3d921ab279d6562fd3..bdf369c55b8d0190452f1c61bdab6fcd
  
  #if 0
      s->BasicModeCtrl = 0x2100; // 100Mbps, full duplex
-@@ -1825,7 +1866,7 @@ rtl8139_cplus_transmit_one(RTL8139State *s)
+@@ -1191,6 +1234,8 @@ rtl8139_CpCmd_write(RTL8139State *s, uint32_t val)
+ 
+     rtl8139_log("C+ command register write(w) val=0x%04x\n", val);
+ 
++    if (s->no_cplus)
++        return;
+     s->cplus_enabled = 1;
+ 
+     /* mask unwritable bits */
+@@ -1825,7 +1870,7 @@ rtl8139_cplus_transmit_one(RTL8139State *s)
          s->currCPlusTxDesc = 0;
      } else {
          ++s->currCPlusTxDesc;
@@ -1212,7 +1933,7 @@ index 0daf25a6a30d2e667f9a6c3d921ab279d6562fd3..bdf369c55b8d0190452f1c61bdab6fcd
              s->currCPlusTxDesc = 0;
      }
  
-@@ -2471,12 +2512,89 @@ rtl8139_MultiIntr_read(RTL8139State *s)
+@@ -2471,12 +2516,89 @@ rtl8139_MultiIntr_read(RTL8139State *s)
      return ret;
  }
  
@@ -1302,7 +2023,7 @@ index 0daf25a6a30d2e667f9a6c3d921ab279d6562fd3..bdf369c55b8d0190452f1c61bdab6fcd
      switch (addr) {
          case MAC0 ... MAC0 + 4:
              s->phys[addr - MAC0] = val;
-@@ -2567,6 +2685,8 @@ rtl8139_io_writew(uint32_t addr, uint16_t val, void *priv)
+@@ -2567,6 +2689,8 @@ rtl8139_io_writew(uint32_t addr, uint16_t val, void *priv)
      RTL8139State *s = priv;
  
      addr &= 0xFF;
@@ -1311,7 +2032,7 @@ index 0daf25a6a30d2e667f9a6c3d921ab279d6562fd3..bdf369c55b8d0190452f1c61bdab6fcd
      switch (addr) {
          case IntrMask:
              rtl8139_IntrMask_write(s, val);
-@@ -2628,6 +2748,8 @@ rtl8139_io_writel(uint32_t addr, uint32_t val, void *priv)
+@@ -2628,6 +2752,8 @@ rtl8139_io_writel(uint32_t addr, uint32_t val, void *priv)
      RTL8139State *s = priv;
  
      addr &= 0xFF;
@@ -1320,7 +2041,7 @@ index 0daf25a6a30d2e667f9a6c3d921ab279d6562fd3..bdf369c55b8d0190452f1c61bdab6fcd
      switch (addr) {
          case RxMissed:
              rtl8139_log("RxMissed clearing on write\n");
-@@ -2695,8 +2817,11 @@ rtl8139_io_readb(uint32_t addr, void *priv)
+@@ -2695,8 +2821,11 @@ rtl8139_io_readb(uint32_t addr, void *priv)
  {
      RTL8139State *s = priv;
      uint8_t       ret;
@@ -1332,7 +2053,7 @@ index 0daf25a6a30d2e667f9a6c3d921ab279d6562fd3..bdf369c55b8d0190452f1c61bdab6fcd
      switch (addr) {
          case MAC0 ... MAC0 + 5:
              ret = s->phys[addr - MAC0];
-@@ -2780,8 +2905,11 @@ rtl8139_io_readw(uint32_t addr, void *priv)
+@@ -2780,8 +2909,11 @@ rtl8139_io_readw(uint32_t addr, void *priv)
  {
      RTL8139State *s = priv;
      uint16_t      ret;
@@ -1344,7 +2065,7 @@ index 0daf25a6a30d2e667f9a6c3d921ab279d6562fd3..bdf369c55b8d0190452f1c61bdab6fcd
      switch (addr) {
          case TxAddr0 ... TxAddr0 + 4 * 4 - 1:
              ret = rtl8139_TxStatus_TxAddr_read(s, s->TxAddr, TxAddr0, addr, 2);
-@@ -2861,6 +2989,8 @@ rtl8139_io_readl(uint32_t addr, void *priv)
+@@ -2861,6 +2993,8 @@ rtl8139_io_readl(uint32_t addr, void *priv)
      uint32_t      ret;
  
      addr &= 0xFF;
@@ -1353,7 +2074,7 @@ index 0daf25a6a30d2e667f9a6c3d921ab279d6562fd3..bdf369c55b8d0190452f1c61bdab6fcd
      switch (addr) {
          case RxMissed:
              ret = s->RxMissed;
-@@ -3099,6 +3229,36 @@ rtl8139_timer(void *priv)
+@@ -3099,6 +3233,36 @@ rtl8139_timer(void *priv)
      }
  }
  
@@ -1390,29 +2111,33 @@ index 0daf25a6a30d2e667f9a6c3d921ab279d6562fd3..bdf369c55b8d0190452f1c61bdab6fcd
  static uint8_t
  rtl8139_pci_read(UNUSED(int func), int addr, UNUSED(int len), void *priv)
  {
-@@ -3112,7 +3272,7 @@ rtl8139_pci_read(UNUSED(int func), int addr, UNUSED(int len), void *priv)
+@@ -3112,9 +3276,9 @@ rtl8139_pci_read(UNUSED(int func), int addr, UNUSED(int len), void *priv)
          case 0x01:
              return 0x10;
          case 0x02:
 -            return 0x39;
-+            return s->rtl8169 ? 0x69 : 0x39;
++            return s->device_id & 0xff;
          case 0x03:
-             return 0x81;
+-            return 0x81;
++            return s->device_id >> 8;
          case 0x07:
-@@ -3146,9 +3306,11 @@ rtl8139_pci_read(UNUSED(int func), int addr, UNUSED(int len), void *priv)
+             return 0x02;
+         case 0x06:
+@@ -3146,9 +3310,11 @@ rtl8139_pci_read(UNUSED(int func), int addr, UNUSED(int len), void *priv)
          case 0x2d:
              return 0x10;
          case 0x2e:
 -            return 0x39;
-+            return s->rtl8169 ? 0x69 : 0x39;
++            return s->device_id & 0xff;
          case 0x2f:
-             return 0x81;
+-            return 0x81;
++            return s->device_id >> 8;
 +        case 0x30 ... 0x33:
 +            return s->rom_bar[addr & 3];
          case 0x34:
              return 0xdc;
          case 0x3d:
-@@ -3163,7 +3325,6 @@ rtl8139_pci_write(UNUSED(int func), int addr, UNUSED(int len), uint8_t val, void
+@@ -3163,7 +3329,6 @@ rtl8139_pci_write(UNUSED(int func), int addr, UNUSED(int len), uint8_t val, void
  
      switch (addr) {
          case 0x04:
@@ -1420,7 +2145,7 @@ index 0daf25a6a30d2e667f9a6c3d921ab279d6562fd3..bdf369c55b8d0190452f1c61bdab6fcd
              io_removehandler((s->pci_conf[0x11] << 8), 256,
                               rtl8139_io_readb_ioport, rtl8139_io_readw_ioport, rtl8139_io_readl_ioport,
                               rtl8139_io_writeb_ioport, rtl8139_io_writew_ioport, rtl8139_io_writel_ioport,
-@@ -3174,8 +3335,9 @@ rtl8139_pci_write(UNUSED(int func), int addr, UNUSED(int len), uint8_t val, void
+@@ -3174,8 +3339,9 @@ rtl8139_pci_write(UNUSED(int func), int addr, UNUSED(int len), uint8_t val, void
                                rtl8139_io_readb_ioport, rtl8139_io_readw_ioport, rtl8139_io_readl_ioport,
                                rtl8139_io_writeb_ioport, rtl8139_io_writew_ioport, rtl8139_io_writel_ioport,
                                priv);
@@ -1432,7 +2157,7 @@ index 0daf25a6a30d2e667f9a6c3d921ab279d6562fd3..bdf369c55b8d0190452f1c61bdab6fcd
              break;
          case 0x05:
              s->pci_conf[addr & 0xFF] = val & 1;
-@@ -3213,14 +3375,13 @@ rtl8139_pci_write(UNUSED(int func), int addr, UNUSED(int len), uint8_t val, void
+@@ -3213,14 +3379,13 @@ rtl8139_pci_write(UNUSED(int func), int addr, UNUSED(int len), uint8_t val, void
              s->mem_base &= 0xfffff000;
  #endif
              rtl8139_log("New memory base: %08X\n", s->mem_base);
@@ -1454,7 +2179,7 @@ index 0daf25a6a30d2e667f9a6c3d921ab279d6562fd3..bdf369c55b8d0190452f1c61bdab6fcd
              break;
          case 0x3c:
              s->pci_conf[addr & 0xFF] = val;
-@@ -3232,6 +3393,7 @@ static void *
+@@ -3232,6 +3397,7 @@ static void *
  nic_init(const device_t *info)
  {
      RTL8139State *s                     = calloc(1, sizeof(RTL8139State));
@@ -1462,7 +2187,7 @@ index 0daf25a6a30d2e667f9a6c3d921ab279d6562fd3..bdf369c55b8d0190452f1c61bdab6fcd
      nmc93cxx_eeprom_params_t params;
      char          eeprom_filename[1024] = { 0 };
      char          filename[1024] = { 0 };
-@@ -3244,7 +3406,8 @@ nic_init(const device_t *info)
+@@ -3244,7 +3410,8 @@ nic_init(const device_t *info)
                      rtl8139_io_writeb_mem, rtl8139_io_writew_mem, rtl8139_io_writel_mem,
                      NULL, MEM_MAPPING_EXTERNAL, s);
      pci_add_card(PCI_ADD_NORMAL, rtl8139_pci_read, rtl8139_pci_write, s, &s->pci_slot);
@@ -1472,16 +2197,20 @@ index 0daf25a6a30d2e667f9a6c3d921ab279d6562fd3..bdf369c55b8d0190452f1c61bdab6fcd
  
      snprintf(eeprom_filename, sizeof(eeprom_filename), "eeprom_rtl8139c_plus_%d.nvr", s->inst);
  
-@@ -3255,7 +3418,7 @@ nic_init(const device_t *info)
+@@ -3255,7 +3422,11 @@ nic_init(const device_t *info)
  
      /* PCI vendor and device ID should be mirrored here */
      eep_data[1] = 0x10EC;
 -    eep_data[2] = 0x8139;
-+    eep_data[2] = s->rtl8169 ? 0x8169 : 0x8139;
++    s->device_id = device_get_config_hex16("device_id");
++    s->no_cplus  = !s->rtl8169 && !device_get_config_int("cplus");
++    if (!s->device_id)
++        s->device_id = s->rtl8169 ? 0x8169 : 0x8139;
++    eep_data[2] = s->device_id;
  
      /* XXX: Get proper MAC addresses from real EEPROM dumps. OID is generic Realtek */
      eep_data[7] = 0xe000;
-@@ -3292,6 +3455,21 @@ nic_init(const device_t *info)
+@@ -3292,6 +3463,21 @@ nic_init(const device_t *info)
      snprintf(filename, sizeof(filename), "nmc93cxx_eeprom_%s_%d.nvr", info->internal_name, s->inst);
      s->eeprom = device_add_inst_params(&nmc93cxx_device, s->inst, &params);
  
@@ -1503,7 +2232,7 @@ index 0daf25a6a30d2e667f9a6c3d921ab279d6562fd3..bdf369c55b8d0190452f1c61bdab6fcd
      s->nic = network_attach(s, (uint8_t *) &s->phys[MAC0], rtl8139_do_receive, rtl8139_set_link_status);
      timer_add(&s->timer, rtl8139_timer, s, 0);
      timer_on_auto(&s->timer, 1000000.0 / cpu_pci_speed);
-@@ -3322,6 +3500,43 @@ static const device_config_t rtl8139c_config[] = {
+@@ -3322,6 +3508,76 @@ static const device_config_t rtl8139c_config[] = {
          .selection      = { { 0 } },
          .bios           = { { 0 } }
      },
@@ -1513,6 +2242,28 @@ index 0daf25a6a30d2e667f9a6c3d921ab279d6562fd3..bdf369c55b8d0190452f1c61bdab6fcd
 +        .type           = CONFIG_BINARY,
 +        .default_string = NULL,
 +        .default_int    = 0,
++        .file_filter    = NULL,
++        .spinner        = { 0 },
++        .selection      = { { 0 } },
++        .bios           = { { 0 } }
++    },
++    {
++        .name           = "device_id",
++        .description    = "PCI device ID (0 = standard)",
++        .type           = CONFIG_HEX16,
++        .default_string = NULL,
++        .default_int    = 0,
++        .file_filter    = NULL,
++        .spinner        = { 0 },
++        .selection      = { { 0 } },
++        .bios           = { { 0 } }
++    },
++    {
++        .name           = "cplus",
++        .description    = "C+ mode (off: a plain RTL8139C)",
++        .type           = CONFIG_BINARY,
++        .default_string = NULL,
++        .default_int    = 1,
 +        .file_filter    = NULL,
 +        .spinner        = { 0 },
 +        .selection      = { { 0 } },
@@ -1544,10 +2295,21 @@ index 0daf25a6a30d2e667f9a6c3d921ab279d6562fd3..bdf369c55b8d0190452f1c61bdab6fcd
 +        .selection      = { { 0 } },
 +        .bios           = { { 0 } }
 +    },
++    {
++        .name           = "device_id",
++        .description    = "PCI device ID (0 = standard)",
++        .type           = CONFIG_HEX16,
++        .default_string = NULL,
++        .default_int    = 0,
++        .file_filter    = NULL,
++        .spinner        = { 0 },
++        .selection      = { { 0 } },
++        .bios           = { { 0 } }
++    },
      { .name = "", .description = "", .type = CONFIG_END }
  };
  // clang-format on
-@@ -3339,3 +3554,17 @@ const device_t rtl8139c_plus_device = {
+@@ -3339,3 +3595,17 @@ const device_t rtl8139c_plus_device = {
      .force_redraw  = NULL,
      .config        = rtl8139c_config
  };
@@ -1581,7 +2343,7 @@ index d40505bf06d2032c6794448ad9ad52a1b92f32ee..4dd25930819cefbe57375fe6e99e8671
          .vnameserver           = dns,
          .vnameserver6          = { .s6_addr = { 0xfe, 0xc0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x03 } }, /* fec0::3 - unused */
 diff --git a/src/network/network.c b/src/network/network.c
-index da506deecd6039dbe0849b78a416c2a601078062..a7200b19a5f519d0b8313044d2d1eee766827984 100644
+index da506deecd6039dbe0849b78a416c2a601078062..b58a57785559a7b86715308548d75a0c052b495b 100644
 --- a/src/network/network.c
 +++ b/src/network/network.c
 @@ -123,6 +123,7 @@ static const NETWORK_CARD net_cards[] = {
@@ -1592,22 +2354,74 @@ index da506deecd6039dbe0849b78a416c2a601078062..a7200b19a5f519d0b8313044d2d1eee7
      { &smc_epic100_device         },
      { NULL                        }
      // clang-format on
+@@ -398,11 +399,35 @@ network_queue_clear(netqueue_t *queue)
+     queue->tail = queue->head = 0;
+ }
+ 
++/* BOX86_NET_NOISE_MS: a broadcast ARP request every that many ms of emulated time, the background traffic of a
++   real LAN (SLiRP has none): a card a boot ROM left receiving keeps writing frames into RAM by DMA. */
++static void
++network_noise(netcard_t *card)
++{
++    extern double   cpuclock;
++    static int      ms = -1;
++    static uint64_t next[NET_CARD_MAX];
++    uint8_t         arp[60] = { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x52, 0x54, 0x00, 0x12, 0x34, 0x99, 0x08, 0x06,
++                                0x00, 0x01, 0x08, 0x00, 0x06, 0x04, 0x00, 0x01, 0x52, 0x54, 0x00, 0x12, 0x34, 0x99,
++                                10, 0, 2, 98, 0, 0, 0, 0, 0, 0, 10, 0, 2, 99 };
++
++    if (ms < 0) {
++        const char *env = getenv("BOX86_NET_NOISE_MS");
++        ms = env ? atoi(env) : 0;
++    }
++    if ((ms <= 0) || (tsc < next[card->card_num]))
++        return;
++    next[card->card_num] = tsc + (uint64_t) (cpuclock / 1000.0 * ms);
++    network_rx_put(card, arp, sizeof(arp));
++}
++
+ static void
+ network_rx_queue(void *priv)
+ {
+     netcard_t *card = (netcard_t *) priv;
+ 
++    network_noise(card);
++
+     uint32_t new_link_state = net_cards_conf[card->card_num].link_state;
+     if (new_link_state != card->link_state) {
+         if (card->set_link_state)
+diff --git a/src/port_92.c b/src/port_92.c
+index cd84dda33a11a6c4b34c9a4b344ce75f86a669f6..b3d6aae851e320d3248e14851437ea7291a24515 100644
+--- a/src/port_92.c
++++ b/src/port_92.c
+@@ -108,7 +108,7 @@ port_92_writeb(uint16_t port, uint8_t val, void *priv)
+         mem_a20_recalc();
+     }
+ 
+-    if ((~cpu_alt_reset & val) & 1)
++    if (((~cpu_alt_reset & val) & 1) && (dev->flags & PORT_92_RESET))   /* a board may lack the reset */
+         timer_set_delay_u64(&dev->pulse_timer, dev->pulse_period);
+     else if (!(val & 1))
+         timer_disable(&dev->pulse_timer);
 diff --git a/src/testctl.c b/src/testctl.c
 new file mode 100644
-index 0000000000000000000000000000000000000000..8a545c7a0ac1c16836f3fbc2b14e6c374125c40e
+index 0000000000000000000000000000000000000000..ad1f5dda4076d3978977bb7fa678e287211fae89
 --- /dev/null
 +++ b/src/testctl.c
-@@ -0,0 +1,185 @@
+@@ -0,0 +1,213 @@
 +/*
 + * Test control for automated firmware tests. When $BOX86_TESTCTL names a FIFO, each line written to
 + * it is one command, run in the emulation thread between CPU blocks:
 + *   key <hex>...   press and release each key (set 1 scan codes, 0x1xx = E0 prefixed)
++ *   combo <hex>... press the keys together, then release them (e.g. 1d 38 53: Ctrl+Alt+Del)
++ *   usbkey <hex>.. type on the USB keyboard: modifiers << 8 | HID usage each (e.g. 4c: Del, 054c: Ctrl+Alt+Del)
 + *   text <file>    write the 80x25 text screen at B8000 to <file> (atomic rename)
 + *   pci <file>     write the config space of every bus 0 PCI function to <file> (atomic rename)
 + *   out <port> <v> write byte <v> to I/O <port> (hex)
 + *   in <port> <f>  append "<port> <value>" (hex) read from I/O <port> to file <f>
 + *   shot           save a PNG of the screen in <vm path>/screenshots/ at the next frame
 + *   cr0 <file>     append CR0 (hex) to <file>
++ *   flash <file>   append "<instructions fetched> <bytes read>" from the BIOS flash since the last flash command
 + *   reset          hard reset (reset button)
 + *   quit           power off (NVR saved)
 + */
@@ -1622,6 +2436,8 @@ index 0000000000000000000000000000000000000000..8a545c7a0ac1c16836f3fbc2b14e6c37
 +#include <86box/plat.h>
 +#include <86box/thread.h>
 +#include <86box/video.h>
++#include <86box/device.h>
++#include <86box/usb_uhci.h>
 +#include "cpu.h"
 +
 +#define CMD_MAX 1024
@@ -1751,6 +2567,22 @@ index 0000000000000000000000000000000000000000..8a545c7a0ac1c16836f3fbc2b14e6c37
 +            keyboard_input(0, scan);
 +            arg = end;
 +        }
++    } else if (!strcmp(cmd, "combo")) {
++        unsigned long keys[8];
++        int n = 0;
++        char *end;
++        for (unsigned long scan = strtoul(arg, &end, 16); end != arg && n < 8; scan = strtoul(arg, &end, 16)) {
++            keyboard_input(1, keys[n++] = scan);
++            arg = end;
++        }
++        while (n > 0)
++            keyboard_input(0, keys[--n]);
++    } else if (!strcmp(cmd, "usbkey")) {
++        char *end;
++        for (unsigned long key = strtoul(arg, &end, 16); end != arg; key = strtoul(arg, &end, 16)) {
++            usb_uhci_key(key);
++            arg = end;
++        }
 +    } else if (!strcmp(cmd, "text"))
 +        text_dump(arg);
 +    else if (!strcmp(cmd, "pci"))
@@ -1774,6 +2606,13 @@ index 0000000000000000000000000000000000000000..8a545c7a0ac1c16836f3fbc2b14e6c37
 +            fprintf(fp, "%08x\n", cr0);
 +            fclose(fp);
 +        }
++    } else if (!strcmp(cmd, "flash")) {
++        FILE *fp = fopen(arg, "a");
++        if (fp) {
++            fprintf(fp, "%llu %llu\n", (unsigned long long) flash_fetch_count, (unsigned long long) flash_read_bytes);
++            fclose(fp);
++        }
++        flash_fetch_count = flash_read_bytes = 0;
 +    } else if (!strcmp(cmd, "shot"))
 +        ++monitors[0].mon_screenshots_raw;
 +    else if (!strcmp(cmd, "reset"))
@@ -1783,3 +2622,751 @@ index 0000000000000000000000000000000000000000..8a545c7a0ac1c16836f3fbc2b14e6c37
 +    else
 +        pclog("testctl: unknown command '%s'\n", cmd);
 +}
+diff --git a/src/usb_uhci.c b/src/usb_uhci.c
+new file mode 100644
+index 0000000000000000000000000000000000000000..3e518712eddde4aa38006d16475875b3bdc38942
+--- /dev/null
++++ b/src/usb_uhci.c
+@@ -0,0 +1,742 @@
++/*
++ * UHCI USB controller for firmware tests: a VIA VT83C572 (1106:3038 rev 61, the MB-8433UUD-A's USB card) whose
++ * frame list, queue heads and transfer descriptors are walked from RAM by bus mastering every ms, as the hardware
++ * does (nothing runs while PCI bus mastering is off). Root port 1: a HID boot keyboard (BOX86_USB_KBD=1; keys typed
++ * by the test control's "usbkey"); port 2: a bulk-only mass storage disk on an image file (BOX86_USB_DISK=path).
++ * The keyboard is low speed, as real ones: its TDs need the LS bit (else they time out), its port shows LSDA;
++ * the disk is full speed. BOX86_USB_FAULT injects one fault: kbd-stall (the keyboard stalls its control requests),
++ * disk-nak (the disk never sends data), disk-stall (it stalls the data of READ), disk-csw (bad CSW signature),
++ * disk-gone (it is unplugged 3 s after its first READ). Enough of USB for a BIOS and an OS driver: control, interrupt and bulk transfers, SCSI
++ * INQUIRY, TEST UNIT READY, REQUEST SENSE, READ CAPACITY, READ/WRITE(10), MODE SENSE.
++ */
++#include <stdint.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <86box/86box.h>
++#include <86box/device.h>
++#include <86box/dma.h>
++#include <86box/io.h>
++#include <86box/pci.h>
++#include <86box/timer.h>
++#include <86box/usb_uhci.h>
++
++enum { R_NAK = -2, R_STALL = -1 };
++enum { F_NONE, F_KBD_STALL, F_DISK_NAK, F_DISK_STALL, F_DISK_CSW, F_DISK_GONE };
++static int Fault;
++static uint64_t GoneAt;                                /* disk-gone: the frame count it disappears at */
++static uint64_t Frames;
++
++typedef struct usbdev_t usbdev_t;
++struct usbdev_t {
++    int present, low_speed, addr, new_addr, config;
++    const uint8_t *dev_desc, *cfg_desc;
++    int cfg_len;
++    int (*class_request)(usbdev_t *d, const uint8_t *setup, uint8_t *data);   /* data length, or R_STALL */
++    int (*in)(usbdev_t *d, int ep, uint8_t *buf, int len);
++    int (*out)(usbdev_t *d, int ep, const uint8_t *buf, int len);
++    uint8_t setup[8];
++    uint8_t ctl[512];                                  /* control data stage */
++    int     ctl_len, ctl_pos, ctl_in;
++};
++
++/****************************************************************
++ * Keyboard (HID boot protocol)
++ ****************************************************************/
++
++static const uint8_t kbd_dev_desc[18] = { 18, 1, 0x10, 0x01, 0, 0, 0, 8, 0x34, 0x12, 0x01, 0x00, 0x00, 0x01, 0, 0, 0, 1 };
++static const uint8_t kbd_report_desc[63] = {
++    0x05, 0x01, 0x09, 0x06, 0xa1, 0x01, 0x05, 0x07, 0x19, 0xe0, 0x29, 0xe7, 0x15, 0x00, 0x25, 0x01, 0x75, 0x01,
++    0x95, 0x08, 0x81, 0x02, 0x95, 0x01, 0x75, 0x08, 0x81, 0x01, 0x95, 0x05, 0x75, 0x01, 0x05, 0x08, 0x19, 0x01,
++    0x29, 0x05, 0x91, 0x02, 0x95, 0x01, 0x75, 0x03, 0x91, 0x01, 0x95, 0x06, 0x75, 0x08, 0x15, 0x00, 0x25, 0x65,
++    0x05, 0x07, 0x19, 0x00, 0x29, 0x65, 0x81, 0x00, 0xc0
++};
++static const uint8_t kbd_cfg_desc[34] = {
++    9, 2, 34, 0, 1, 1, 0, 0xa0, 50,
++    9, 4, 0, 0, 1, 3, 1, 1, 0,                          /* HID, boot interface, keyboard */
++    9, 0x21, 0x11, 0x01, 0, 1, 0x22, sizeof(kbd_report_desc), 0,
++    7, 5, 0x81, 3, 8, 0, 10                             /* interrupt IN 1, 8 bytes, 10 ms */
++};
++
++#define KBD_QUEUE 64
++static uint8_t kbd_reports[KBD_QUEUE][8];
++static int     kbd_head, kbd_tail;
++
++static void
++kbd_push(uint8_t mods, uint8_t usage)
++{
++    uint8_t *r = kbd_reports[kbd_head];
++    memset(r, 0, 8);
++    r[0] = mods;
++    r[2] = usage;
++    if (((kbd_head + 1) % KBD_QUEUE) != kbd_tail)
++        kbd_head = (kbd_head + 1) % KBD_QUEUE;
++}
++
++/* "usbkey" of the test control: modifiers << 8 | usage, pressed then released. */
++void
++usb_uhci_key(int mods_usage)
++{
++    kbd_push(mods_usage >> 8, mods_usage & 0xff);
++    kbd_push(0, 0);
++}
++
++static int
++kbd_class(usbdev_t *d, const uint8_t *setup, uint8_t *data)
++{
++    if (setup[0] == 0x81 && setup[1] == 6 && setup[3] == 0x22) {          /* report descriptor */
++        memcpy(data, kbd_report_desc, sizeof(kbd_report_desc));
++        return sizeof(kbd_report_desc);
++    }
++    if (setup[0] == 0x21 && (setup[1] == 0x09 || setup[1] == 0x0a || setup[1] == 0x0b))
++        return 0;                                       /* SET_REPORT (LEDs), SET_IDLE, SET_PROTOCOL */
++    if (setup[0] == 0xa1 && setup[1] == 0x01) {        /* GET_REPORT */
++        memset(data, 0, 8);
++        return 8;
++    }
++    return R_STALL;
++}
++
++static int
++kbd_in(usbdev_t *d, int ep, uint8_t *buf, int len)
++{
++    if ((ep != 1) || (kbd_head == kbd_tail))
++        return R_NAK;
++    memcpy(buf, kbd_reports[kbd_tail], 8);
++    kbd_tail = (kbd_tail + 1) % KBD_QUEUE;
++    return len < 8 ? len : 8;
++}
++
++static int
++no_out(usbdev_t *d, int ep, const uint8_t *buf, int len)
++{
++    return R_STALL;
++}
++
++/****************************************************************
++ * Mass storage (bulk-only transport, SCSI)
++ ****************************************************************/
++
++static const uint8_t msc_dev_desc[18] = { 18, 1, 0x00, 0x02, 0, 0, 0, 64, 0x81, 0x07, 0x67, 0x55, 0x00, 0x01, 0, 0, 0, 1 };
++static const uint8_t msc_cfg_desc[32] = {
++    9, 2, 32, 0, 1, 1, 0, 0x80, 50,
++    9, 4, 0, 0, 2, 8, 6, 0x50, 0,                       /* mass storage, SCSI transparent, bulk-only */
++    7, 5, 0x81, 2, 64, 0, 0,                            /* bulk IN 1 */
++    7, 5, 0x02, 2, 64, 0, 0                             /* bulk OUT 2 */
++};
++
++static struct {
++    FILE    *img;
++    uint32_t blocks;
++    enum { M_CBW, M_DATA_IN, M_DATA_OUT, M_CSW } state;
++    uint8_t  cbw[31], csw[13];
++    uint8_t *data;
++    uint32_t data_len, data_pos, lba;
++    uint8_t  sense_key, asc;
++} Msc;
++
++static void
++msc_csw(uint8_t status, uint32_t residue)
++{
++    memcpy(Msc.csw, "USBS", 4);
++    memcpy(&Msc.csw[4], &Msc.cbw[4], 4);                /* tag */
++    memcpy(&Msc.csw[8], &residue, 4);
++    Msc.csw[12] = status;
++    Msc.state   = M_CSW;
++}
++
++static uint32_t
++be32(const uint8_t *p)
++{
++    return (uint32_t) p[0] << 24 | p[1] << 16 | p[2] << 8 | p[3];
++}
++
++/* A command block: its data phase, or straight the CSW. */
++static void
++msc_command(void)
++{
++    const uint8_t *cb = &Msc.cbw[15];
++    uint32_t       want;
++    uint8_t        reply[36];
++    int            n = -1;
++
++    memcpy(&want, &Msc.cbw[8], 4);
++    Msc.data_pos = 0;
++    memset(reply, 0, sizeof(reply));
++    switch (cb[0]) {
++        case 0x00:                                      /* TEST UNIT READY */
++        case 0x1b:                                      /* START STOP UNIT */
++        case 0x1e:                                      /* PREVENT ALLOW MEDIUM REMOVAL */
++            n = 0;
++            break;
++        case 0x03:                                      /* REQUEST SENSE */
++            reply[0] = 0x70, reply[2] = Msc.sense_key, reply[7] = 10, reply[12] = Msc.asc;
++            Msc.sense_key = Msc.asc = 0;
++            n = 18;
++            break;
++        case 0x12:                                      /* INQUIRY */
++            reply[1] = 0x80, reply[2] = 2, reply[3] = 2, reply[4] = 31;
++            memcpy(&reply[8], "86Box   USB DISK        1.00", 28);
++            n = 36;
++            break;
++        case 0x25: {                                    /* READ CAPACITY(10) */
++            uint32_t last = Msc.blocks - 1, bs = 512;
++            for (int i = 0; i < 4; i++)
++                reply[i] = last >> (24 - 8 * i), reply[4 + i] = bs >> (24 - 8 * i);
++            n = 8;
++            break;
++        }
++        case 0x1a:                                      /* MODE SENSE(6) */
++            reply[0] = 3;
++            n = 4;
++            break;
++        case 0x5a:                                      /* MODE SENSE(10) */
++            reply[1] = 6;
++            n = 8;
++            break;
++        case 0x28:                                      /* READ(10) */
++            if (Fault == F_DISK_GONE && !GoneAt)
++                GoneAt = Frames + 3000;
++            /* fall through */
++        case 0x2a: {                                    /* WRITE(10) */
++            uint32_t count = cb[7] << 8 | cb[8];
++            Msc.lba        = be32(&cb[2]);
++            if (((uint64_t) Msc.lba + count > Msc.blocks) || (count * 512 != want)) {
++                Msc.sense_key = 5, Msc.asc = 0x21;      /* illegal request, LBA out of range */
++                msc_csw(1, want);
++                return;
++            }
++            free(Msc.data);
++            Msc.data     = calloc(1, count * 512 + 1);
++            Msc.data_len = count * 512;
++            if (cb[0] == 0x28) {
++                fseek(Msc.img, (long) Msc.lba * 512, SEEK_SET);
++                if (fread(Msc.data, 512, count, Msc.img) != count)
++                    Msc.sense_key = 3, Msc.asc = 0x11;  /* unrecovered read error: the data stays zero */
++                Msc.state = count ? M_DATA_IN : M_CSW;
++            } else
++                Msc.state = count ? M_DATA_OUT : M_CSW;
++            if (!count)
++                msc_csw(0, 0);
++            return;
++        }
++        default:
++            Msc.sense_key = 5, Msc.asc = 0x20;          /* illegal request, invalid command */
++            msc_csw(1, want);
++            return;
++    }
++    if (n > (int) want)
++        n = want;
++    free(Msc.data);
++    Msc.data = malloc(n + 1);
++    memcpy(Msc.data, reply, n);
++    Msc.data_len = n;
++    if (n && (Msc.cbw[12] & 0x80))
++        Msc.state = M_DATA_IN;
++    else
++        msc_csw(0, want - n);
++}
++
++static int
++msc_class(usbdev_t *d, const uint8_t *setup, uint8_t *data)
++{
++    if (setup[0] == 0xa1 && setup[1] == 0xfe) {        /* GET MAX LUN */
++        data[0] = 0;
++        return 1;
++    }
++    if (setup[0] == 0x21 && setup[1] == 0xff) {        /* bulk-only mass storage reset */
++        Msc.state = M_CBW;
++        return 0;
++    }
++    return R_STALL;
++}
++
++static int
++msc_out(usbdev_t *d, int ep, const uint8_t *buf, int len)
++{
++    if (ep != 2)
++        return R_STALL;
++    if (Msc.state == M_CBW) {
++        if ((len != 31) || memcmp(buf, "USBC", 4))
++            return R_STALL;
++        memcpy(Msc.cbw, buf, 31);
++        msc_command();
++        return len;
++    }
++    if (Msc.state != M_DATA_OUT)
++        return R_STALL;
++    if ((uint32_t) len > Msc.data_len - Msc.data_pos)
++        len = Msc.data_len - Msc.data_pos;
++    memcpy(Msc.data + Msc.data_pos, buf, len);
++    Msc.data_pos += len;
++    if (Msc.data_pos == Msc.data_len) {
++        fseek(Msc.img, (long) Msc.lba * 512, SEEK_SET);
++        if (fwrite(Msc.data, 1, Msc.data_len, Msc.img) != Msc.data_len)
++            Msc.sense_key = 3, Msc.asc = 0x0c;          /* write error */
++        fflush(Msc.img);
++        msc_csw(Msc.sense_key ? 1 : 0, 0);
++    }
++    return len;
++}
++
++static int
++msc_in(usbdev_t *d, int ep, uint8_t *buf, int len)
++{
++    if (ep != 1)
++        return R_STALL;
++    if (Fault == F_DISK_NAK)
++        return R_NAK;
++    if (Fault == F_DISK_STALL && Msc.state == M_DATA_IN && Msc.cbw[15] == 0x28)
++        return R_STALL;
++    if (Msc.state == M_DATA_IN) {
++        if ((uint32_t) len > Msc.data_len - Msc.data_pos)
++            len = Msc.data_len - Msc.data_pos;
++        memcpy(buf, Msc.data + Msc.data_pos, len);
++        Msc.data_pos += len;
++        if (Msc.data_pos == Msc.data_len) {
++            uint32_t want;
++            memcpy(&want, &Msc.cbw[8], 4);
++            msc_csw(Msc.sense_key ? 1 : 0, want - Msc.data_len);
++        }
++        return len;
++    }
++    if (Msc.state == M_CSW) {
++        memcpy(buf, Msc.csw, 13);
++        if (Fault == F_DISK_CSW)
++            buf[0] = 'X';
++        Msc.state = M_CBW;
++        return 13;
++    }
++    return R_NAK;
++}
++
++/****************************************************************
++ * Control transfers (endpoint 0)
++ ****************************************************************/
++
++static int
++dev_setup(usbdev_t *d, const uint8_t *setup)
++{
++    if (Fault == F_KBD_STALL && d->class_request == kbd_class)
++        return R_STALL;
++    uint16_t value = setup[2] | setup[3] << 8, length = setup[6] | setup[7] << 8;
++    int      n     = 0;
++
++    memcpy(d->setup, setup, 8);
++    d->ctl_in  = setup[0] & 0x80;
++    d->ctl_pos = 0;
++    if ((setup[0] & 0x60) == 0) {                       /* standard requests */
++        switch (setup[1]) {
++            case 0:                                     /* GET_STATUS */
++                memset(d->ctl, 0, 2);
++                n = 2;
++                break;
++            case 5:                                     /* SET_ADDRESS: once the status stage is done */
++                d->new_addr = value & 0x7f;
++                break;
++            case 6:                                     /* GET_DESCRIPTOR */
++                if ((value >> 8) == 1)
++                    memcpy(d->ctl, d->dev_desc, n = 18);
++                else if ((value >> 8) == 2)
++                    memcpy(d->ctl, d->cfg_desc, n = d->cfg_len);
++                else if ((value >> 8) == 0x22 && d->class_request)
++                    n = d->class_request(d, (const uint8_t[8]) { 0x81, 6, 0, 0x22 }, d->ctl);
++                else
++                    n = R_STALL;
++                break;
++            case 8:                                     /* GET_CONFIGURATION */
++                d->ctl[0] = d->config;
++                n         = 1;
++                break;
++            case 9:                                     /* SET_CONFIGURATION */
++                d->config = value & 0xff;
++                break;
++            case 1:                                     /* CLEAR_FEATURE (endpoint halt) */
++            case 3:                                     /* SET_FEATURE */
++            case 11:                                    /* SET_INTERFACE */
++                break;
++            default:
++                n = R_STALL;
++        }
++    } else
++        n = d->class_request(d, setup, d->ctl);
++    if (n < 0)
++        return R_STALL;
++    d->ctl_len = n < length ? n : length;
++    return 8;
++}
++
++static int
++dev_in(usbdev_t *d, int ep, uint8_t *buf, int len)
++{
++    if (ep)
++        return d->in(d, ep, buf, len);
++    if (!d->ctl_in) {                                   /* status stage of an OUT or no-data request */
++        if (d->setup[1] == 5 && (d->setup[0] & 0x60) == 0)
++            d->addr = d->new_addr;
++        return 0;
++    }
++    int n = d->ctl_len - d->ctl_pos;
++    if (n > len)
++        n = len;
++    memcpy(buf, d->ctl + d->ctl_pos, n);
++    d->ctl_pos += n;
++    return n;
++}
++
++static int
++dev_out(usbdev_t *d, int ep, const uint8_t *buf, int len)
++{
++    if (ep)
++        return d->out(d, ep, buf, len);
++    return len;                                         /* data or status stage: accepted */
++}
++
++/****************************************************************
++ * The controller
++ ****************************************************************/
++
++enum { CMD_RS = 1, CMD_HCRESET = 2, CMD_GRESET = 4 };
++enum { STS_USBINT = 1, STS_ERROR = 2, STS_HALTED = 0x20 };
++enum { PORT_CCS = 1, PORT_CSC = 2, PORT_PE = 4, PORT_PEC = 8, PORT_LSDA = 0x100, PORT_RESET = 0x200 };
++enum { TD_ACTIVE = 1 << 23, TD_STALLED = 1 << 22, TD_NAK = 1 << 19, TD_TIMEOUT = 1 << 18, TD_IOC = 1 << 24,
++       TD_LS = 1 << 26 };
++
++typedef struct uhci_t {
++    uint8_t    pci[256];
++    uint8_t    slot, irq_state;
++    uint16_t   io_base;
++    uint16_t   cmd, sts, intr, frnum;
++    uint32_t   flbase;
++    uint8_t    sof;
++    uint16_t   portsc[2];
++    usbdev_t   dev[2];
++    pc_timer_t frame_timer;
++} uhci_t;
++
++static uhci_t *Uhci;
++
++static void
++uhci_irq(uhci_t *u)
++{
++    if ((u->sts & (STS_USBINT | STS_ERROR)) && (u->intr & 0x0d))
++        pci_set_irq(u->slot, PCI_INTA, &u->irq_state);
++    else
++        pci_clear_irq(u->slot, PCI_INTA, &u->irq_state);
++}
++
++static usbdev_t *
++uhci_find(uhci_t *u, int addr)
++{
++    for (int p = 0; p < 2; p++)
++        if (u->dev[p].present && (u->portsc[p] & PORT_PE) && !(u->portsc[p] & PORT_RESET) && u->dev[p].addr == addr)
++            return &u->dev[p];
++    return NULL;
++}
++
++static uint32_t
++rd32(uint32_t addr)
++{
++    uint32_t v;
++    dma_bm_read(addr, (uint8_t *) &v, 4, 4);
++    return v;
++}
++
++static void
++wr32(uint32_t addr, uint32_t v)
++{
++    dma_bm_write(addr, (uint8_t *) &v, 4, 4);
++}
++
++/* One TD: 1 done (or not active), 0 NAK (left active), -1 error (stalled or no device). */
++static int
++uhci_td(uhci_t *u, uint32_t td, uint32_t *link)
++{
++    uint32_t status = rd32(td + 4), token = rd32(td + 8), buffer = rd32(td + 12);
++    *link = rd32(td);
++    if (!(status & TD_ACTIVE))
++        return 1;
++    int       pid = token & 0xff, addr = (token >> 8) & 0x7f, ep = (token >> 15) & 0xf;
++    int       maxlen = ((token >> 21) + 1) & 0x7ff;
++    uint8_t   buf[1024];
++    usbdev_t *d = uhci_find(u, addr);
++    int       n;
++
++    if (!d || (d->low_speed && !(status & TD_LS)))   /* a full-speed packet: a low-speed device ignores it */
++        n = -3;
++    else if (pid == 0x2d) {                             /* SETUP */
++        dma_bm_read(buffer, buf, 8, 4);
++        n = dev_setup(d, buf);
++    } else if (pid == 0xe1) {                           /* OUT */
++        dma_bm_read(buffer, buf, maxlen, 4);
++        n = dev_out(d, ep, buf, maxlen);
++    } else if (pid == 0x69) {                           /* IN */
++        n = dev_in(d, ep, buf, maxlen);
++        if (n > 0)
++            dma_bm_write(buffer, buf, n, 4);
++    } else
++        n = R_STALL;
++    if (n == R_NAK) {
++        wr32(td + 4, status | TD_NAK);
++        return 0;
++    }
++    status &= ~(TD_ACTIVE | TD_NAK | 0x7ff);
++    if (n == -3)
++        status |= TD_TIMEOUT | TD_STALLED;
++    else if (n < 0)
++        status |= TD_STALLED;
++    else
++        status |= (n - 1) & 0x7ff;                      /* actual length - 1, 7FFh for none */
++    wr32(td + 4, status);
++    if (status & TD_IOC)
++        u->sts |= STS_USBINT;
++    if (n < 0) {
++        u->sts |= STS_ERROR;
++        return -1;
++    }
++    return 1;
++}
++
++static void
++uhci_frame(void *priv)
++{
++    uhci_t  *u    = (uhci_t *) priv;
++    uint32_t link = rd32(u->flbase + (u->frnum & 0x3ff) * 4), next;
++
++    timer_on_auto(&u->frame_timer, 1000.0);
++    Frames++;
++    if (GoneAt && Frames >= GoneAt && u->dev[1].present) {   /* disk-gone: unplugged */
++        u->dev[1].present = 0;
++        u->portsc[1]      = PORT_CSC | PORT_PEC;
++    }
++    if (!(u->cmd & CMD_RS) || !(u->pci[0x04] & 4))     /* stopped, or no bus mastering */
++        return;
++    for (int i = 0; i < 256 && !(link & 1); i++) {
++        uint32_t addr = link & ~0xf;
++        if (link & 2) {                                 /* queue head: its TDs until one is not done */
++            uint32_t elem = rd32(addr + 4);
++            for (int j = 0; j < 64 && !(elem & 3); j++) {
++                if (uhci_td(u, elem & ~0xf, &next) <= 0)
++                    break;
++                elem = next;
++                wr32(addr + 4, elem);
++                if (!(next & 4))                        /* breadth first: one TD per queue per pass */
++                    break;
++            }
++            link = rd32(addr);
++        } else {
++            uhci_td(u, addr, &next);
++            link = next;
++        }
++    }
++    u->frnum = (u->frnum + 1) & 0x7ff;
++    uhci_irq(u);
++}
++
++static void
++uhci_port_reset(uhci_t *u)
++{
++    for (int p = 0; p < 2; p++) {
++        u->portsc[p] = u->dev[p].present ? PORT_CCS | PORT_CSC | (u->dev[p].low_speed ? PORT_LSDA : 0) : 0;
++        u->dev[p].addr = u->dev[p].config = 0;
++    }
++}
++
++static void
++uhci_reset(uhci_t *u)
++{
++    u->cmd = u->intr = u->frnum = 0;
++    u->sts    = STS_HALTED;
++    u->flbase = 0;
++    u->sof    = 0x40;
++    uhci_port_reset(u);
++}
++
++static uint16_t
++uhci_readw(uint16_t port, void *priv)
++{
++    uhci_t *u = (uhci_t *) priv;
++    switch (port - u->io_base) {
++        case 0x00: return u->cmd;
++        case 0x02: return u->sts;
++        case 0x04: return u->intr;
++        case 0x06: return u->frnum;
++        case 0x08: return u->flbase & 0xffff;
++        case 0x0a: return u->flbase >> 16;
++        case 0x0c: return u->sof;
++        case 0x10: return u->portsc[0] | 0x80;
++        case 0x12: return u->portsc[1] | 0x80;
++    }
++    return 0xffff;
++}
++
++static uint8_t
++uhci_readb(uint16_t port, void *priv)
++{
++    return uhci_readw(port & ~1, priv) >> (8 * (port & 1));
++}
++
++static uint32_t
++uhci_readl(uint16_t port, void *priv)
++{
++    return uhci_readw(port, priv) | (uint32_t) uhci_readw(port + 2, priv) << 16;
++}
++
++static void
++uhci_writew(uint16_t port, uint16_t val, void *priv)
++{
++    uhci_t *u = (uhci_t *) priv;
++    switch (port - u->io_base) {
++        case 0x00:
++            if (val & (CMD_HCRESET | CMD_GRESET)) {
++                uhci_reset(u);
++                break;
++            }
++            u->cmd = val;
++            u->sts = (u->sts & ~STS_HALTED) | (val & CMD_RS ? 0 : STS_HALTED);
++            break;
++        case 0x02: u->sts &= ~(val & 0x1f); uhci_irq(u); break;
++        case 0x04: u->intr = val & 0x0f; uhci_irq(u); break;
++        case 0x06: u->frnum = val & 0x7ff; break;
++        case 0x08: u->flbase = (u->flbase & 0xffff0000) | (val & 0xf000); break;
++        case 0x0a: u->flbase = (u->flbase & 0xffff) | (uint32_t) val << 16; break;
++        case 0x0c: u->sof = val & 0x7f; break;
++        case 0x10:
++        case 0x12: {
++            int       p  = (port - u->io_base - 0x10) / 2;
++            uint16_t *sc = &u->portsc[p];
++            if (val & PORT_RESET) {
++                u->dev[p].addr = u->dev[p].config = 0;
++                *sc = (*sc & ~PORT_PE) | PORT_RESET;
++            } else
++                *sc &= ~PORT_RESET;
++            *sc &= ~(val & (PORT_CSC | PORT_PEC));      /* write 1 to clear */
++            if ((val & PORT_PE) && (*sc & PORT_CCS) && !(*sc & PORT_RESET))
++                *sc |= PORT_PE;
++            else if (!(val & PORT_PE))
++                *sc &= ~PORT_PE;
++            break;
++        }
++    }
++}
++
++static void
++uhci_writeb(uint16_t port, uint8_t val, void *priv)
++{
++    uint16_t old = uhci_readw(port & ~1, priv);
++    uhci_writew(port & ~1, (port & 1) ? (old & 0xff) | val << 8 : (old & 0xff00) | val, priv);
++}
++
++static void
++uhci_writel(uint16_t port, uint32_t val, void *priv)
++{
++    uhci_writew(port, val & 0xffff, priv);
++    uhci_writew(port + 2, val >> 16, priv);
++}
++
++static void
++uhci_io(uhci_t *u, int on)
++{
++    if (u->io_base)
++        io_removehandler(u->io_base, 0x20, uhci_readb, uhci_readw, uhci_readl, uhci_writeb, uhci_writew, uhci_writel, u);
++    u->io_base = (u->pci[0x20] | u->pci[0x21] << 8) & 0xffe0;
++    if (on && u->io_base && (u->pci[0x04] & 1))
++        io_sethandler(u->io_base, 0x20, uhci_readb, uhci_readw, uhci_readl, uhci_writeb, uhci_writew, uhci_writel, u);
++    else
++        u->io_base = 0;
++}
++
++static uint8_t
++uhci_pci_read(int func, int addr, int len, void *priv)
++{
++    const uhci_t *u = (const uhci_t *) priv;
++    return func ? 0xff : u->pci[addr & 0xff];
++}
++
++static void
++uhci_pci_write(int func, int addr, int len, uint8_t val, void *priv)
++{
++    uhci_t *u = (uhci_t *) priv;
++    if (func)
++        return;
++    switch (addr) {
++        case 0x04: u->pci[0x04] = val & 0x07; uhci_io(u, 1); break;
++        case 0x0d: u->pci[0x0d] = val; break;
++        case 0x20: u->pci[0x20] = (val & 0xe0) | 1; uhci_io(u, 1); break;
++        case 0x21: u->pci[0x21] = val; uhci_io(u, 1); break;
++        case 0x3c: u->pci[0x3c] = val; break;
++        case 0x40 ... 0x4f:
++        case 0xc0 ... 0xc1: u->pci[addr] = val; break;
++    }
++}
++
++static void *
++uhci_init(const device_t *info)
++{
++    uhci_t     *u    = calloc(1, sizeof(uhci_t));
++    const char *disk = getenv("BOX86_USB_DISK"), *fault = getenv("BOX86_USB_FAULT");
++    static const char *const faults[] = { "", "kbd-stall", "disk-nak", "disk-stall", "disk-csw", "disk-gone" };
++
++    for (int f = 1; fault && f < 6; f++)
++        if (!strcmp(fault, faults[f]))
++            Fault = f;
++    GoneAt = Frames = 0;
++
++    u->pci[0x00] = 0x06, u->pci[0x01] = 0x11, u->pci[0x02] = 0x38, u->pci[0x03] = 0x30;
++    u->pci[0x06] = 0x10, u->pci[0x07] = 0x02, u->pci[0x08] = 0x61;
++    u->pci[0x09] = 0x00, u->pci[0x0a] = 0x03, u->pci[0x0b] = 0x0c;
++    u->pci[0x20] = 0x01, u->pci[0x3d] = PCI_INTA, u->pci[0x60] = 0x10, u->pci[0xc1] = 0x20;
++    if (getenv("BOX86_USB_KBD")) {
++        usbdev_t *k = &u->dev[0];
++        k->present = 1, k->low_speed = 1, k->dev_desc = kbd_dev_desc, k->cfg_desc = kbd_cfg_desc, k->cfg_len = sizeof(kbd_cfg_desc);
++        k->class_request = kbd_class, k->in = kbd_in, k->out = no_out;
++    }
++    if (disk && (Msc.img = fopen(disk, "r+b"))) {
++        usbdev_t *m = &u->dev[1];
++        fseek(Msc.img, 0, SEEK_END);
++        Msc.blocks = ftell(Msc.img) / 512;
++        m->present = 1, m->dev_desc = msc_dev_desc, m->cfg_desc = msc_cfg_desc, m->cfg_len = sizeof(msc_cfg_desc);
++        m->class_request = msc_class, m->in = msc_in, m->out = msc_out;
++    }
++    uhci_reset(u);
++    pci_add_card(PCI_ADD_NORMAL, uhci_pci_read, uhci_pci_write, u, &u->slot);
++    timer_add(&u->frame_timer, uhci_frame, u, 0);
++    timer_on_auto(&u->frame_timer, 1000.0);
++    Uhci = u;
++    return u;
++}
++
++static void
++uhci_close(void *priv)
++{
++    uhci_t *u = (uhci_t *) priv;
++    if (Msc.img)
++        fclose(Msc.img);
++    free(Msc.data);
++    memset(&Msc, 0, sizeof(Msc));
++    Uhci = NULL;
++    free(u);
++}
++
++static void
++uhci_device_reset(void *priv)
++{
++    uhci_t *u = (uhci_t *) priv;
++    uhci_reset(u);
++    u->pci[0x04] = 0;
++    uhci_io(u, 0);
++}
++
++const device_t usb_uhci_via_device = {
++    .name          = "VIA VT83C572 USB (UHCI) for tests",
++    .internal_name = "usb_uhci_via",
++    .flags         = DEVICE_PCI,
++    .local         = 0,
++    .init          = uhci_init,
++    .close         = uhci_close,
++    .reset         = uhci_device_reset,
++    .available     = NULL,
++    .speed_changed = NULL,
++    .force_redraw  = NULL,
++    .config        = NULL
++};

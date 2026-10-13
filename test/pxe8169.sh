@@ -1,17 +1,16 @@
 #!/bin/bash
-# PCI RTL8169S (gigabit) with an iPXE ROM in its boot ROM socket, no disk: with "1st boot device = Network"
-# iPXE does DHCP + TFTP of the Linux 6.18 bzImage with ip=dhcp, whose r8169 driver brings the link up and
-# gets its address by DHCP. NIC_ROM / KERNEL: other builds to test.
+# PCI RTL8169S (gigabit) without a socket ROM, no disk, the iPXE of a 2 Mbit flash's lower half: with "1st boot
+# device = Network" iPXE does DHCP and runs the boot file (an iPXE script: the Linux 6.18 bzImage with ip=dhcp),
+# whose r8169 driver brings the link up and gets its address by DHCP. KERNEL: another build to test.
 . "$(dirname "$0")/lib.sh"
-nic_rom=${NIC_ROM:-$nb/build/ipxe-rtl8169.rom} kernel=${KERNEL:-$nb/build/bzImage}
-[ -f "$nic_rom" ] || "$nb/test/ipxe/build.sh"
+kernel=${KERNEL:-$nb/build/bzImage}
 [ -f "$kernel" ] || "$nb/test/linux/build.sh"
-mkdir -p "$vm_dir/tftp" "$vm_dir/roms/network/rtl8169"
-cp "$nic_rom" "$vm_dir/roms/network/rtl8169/rtl8169.rom"
+mkdir -p "$vm_dir/tftp"
+printf '#!ipxe\nchain tftp://${next-server}/bzImage ip=dhcp\n' > "$vm_dir/tftp/boot.ipxe"
 cp "$kernel" "$vm_dir/tftp/bzImage"
-export BOX86_SLIRP_TFTP=$vm_dir/tftp BOX86_SLIRP_BOOTFILE=bzImage
-vm_start pxe8169 "$rom" "$(printf '[Network]\nnet_01_card = rtl8169\nnet_01_net_type = slirp\nnet_01_link = 0\n
-[Realtek RTL8169S #1]\nbios = 1\n')"
+export BOX86_SLIRP_TFTP=$vm_dir/tftp BOX86_SLIRP_BOOTFILE=boot.ipxe BOX86_FLASH=w49f002a
+vm_start pxe8169 "${rom%.rom}-2mbit.rom" "$(printf '[Network]\nnet_01_card = rtl8169\nnet_01_net_type = slirp\nnet_01_link = 0\n
+[Realtek RTL8169S #1]\nbios = 0\n')"
 
 vm_end_of_post 60
 vm_setup

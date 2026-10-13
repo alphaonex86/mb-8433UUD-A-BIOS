@@ -22,15 +22,13 @@ file_sha() {  # url, sha256, file
 # Firmware: the 486 coreboot and SeaBIOS trees of their author (github.com/pc2005cz), patched by build.sh.
 git_at https://github.com/pc2005cz/coreboot_486.git ff1be301ad1bbb35d1644243dd63d4b2c8fd8a8d "$src/coreboot_486"
 git_at https://github.com/pc2005cz/seabios_486.git 7d5405a094acca0cb80bb7c1fb94425ce181031b "$src/seabios_486"
-# Built-in network boot ROM (tools/build_etherboot.sh).
-file_sha https://downloads.sourceforge.net/project/etherboot/etherboot/5.4.4/etherboot-5.4.4.tar.bz2 \
-  a84af97370d6b93012a4aa171990d87f766b453d27bf837e376783577c30932a "$src/etherboot-5.4.4.tar.bz2"
+# Network boot ROM in the flash (tools/build_ipxe.sh).
+git_at https://github.com/ipxe/ipxe.git 6ba671acd922ee046b257c5119b8a0f64d275473 "$src/ipxe"
 [ "${1:-}" = firmware ] && exit 0
 
-# Tests: 86Box 6.0 (patched into the test emulator), iPXE (PXE NBP), FreeDOS 1.3, Linux 6.18 (last i486 LTS).
+# Tests: 86Box 6.0 (patched into the test emulator), FreeDOS 1.3, Linux 6.18 (last i486 LTS).
 file_sha https://github.com/86Box/86Box/archive/refs/tags/v6.0.tar.gz \
   9c3c52b8587dac6adbfeab566d9543d37fec554ef00c147e39deebc418fab07c "$src/86Box-6.0.tar.gz"
-git_at https://github.com/ipxe/ipxe.git 6ba671acd922ee046b257c5119b8a0f64d275473 "$src/ipxe"
 file_sha https://www.ibiblio.org/pub/micro/pc-stuff/freedos/files/distributions/1.3/official/FD13-LiteUSB.zip \
   64a934585087ccd91a18c55e20ee01f5f6762be712eeaa5f456be543778f9f7e "$src/FD13-LiteUSB.zip"
 file_sha https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.18.55.tar.xz \

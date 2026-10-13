@@ -55,21 +55,25 @@ vm_menu 1
 vm_wait_text "1st Boot Device +: Network" 5
 vm_expect "4th Boot Device +: CD-ROM"
 vm_key $K_ESC
-vm_menu 6                                         # HARDWARE INFORMATION
+vm_info 0                                         # HARDWARE INFORMATION: a menu of the pages
 vm_wait_text "CPU +: Am5x86" 5
 vm_expect "Core clock +: 1[0-9]{2} MHz"
-vm_key $K_PGDN
+vm_key $K_ESC $K_DOWN $K_ENTER
 vm_wait_text "1060:8881 +UMC +Host bridge" 5
-vm_key $K_PGDN
+vm_key $K_ESC $K_DOWN $K_ENTER
+vm_wait_text "USB DEVICES" 5
+vm_expect "^ +none"                                # no USB controller in 86Box
+vm_key $K_ESC $K_DOWN $K_ENTER
 vm_wait_text "IRQ 15 : IDE secondary" 5
-vm_key $K_PGDN
+vm_key $K_ESC $K_DOWN $K_ENTER
 vm_wait_text "Secondary Master : 86B_HD" 5
 vm_expect "PIO mode [0-4] \(drive max [0-4]\), block (2|4|8|16|32|64|128) "   # IDE HDD Block Mode
-vm_key $K_PGDN
+vm_key $K_ESC $K_DOWN $K_ENTER
 vm_wait_text "UM8881F +00:10.0" 5
-vm_key $K_PGDN                                    # measured on opening, no longer at POST
-vm_wait_text "Memory read speed \(MB/s\) by block size" 5
-vm_expect "4K +8K +16K"
+vm_key $K_ESC $K_DOWN $K_ENTER                    # MEMORY SPEED: graphics (test/bench.sh checks it)
+sleep 20
+vm_key $K_ESC
+vm_wait_text "HARD DISK SPEED" 20                 # back in text mode, in the HARDWARE INFORMATION menu
 vm_key $K_ESC $K_ESC
 vm_wait_text "Quit Without Saving" 5
 vm_key $K_Y                                       # quit without saving: boot continues
