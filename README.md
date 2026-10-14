@@ -6,7 +6,7 @@ Award-like setup utility (main menu, pages, values) configures the board, the PO
 test and drives. Developed and tested in a patched 86Box before touching the real board.
 
 Status 2026-10-14: all emulator tests pass (`test/run_all.sh`); runs on the real board (DOS, Linux from IDE and
-USB, network boot). Published ROMs: `out/release/newbios-mb-8433UUD-A.zip` (`release.sh`, `dist/README.txt`). POST codes
+USB, network boot). Published: `out/release/newbios-mb-8433UUD-A.zip` (`release.sh`: BIOS.bin, POSTCODES.txt and `dist/README.txt`). POST codes
 for a POST card: [POSTCODES.md](POSTCODES.md); everything that is not C: [ASM.md](ASM.md).
 
 ## Screenshots (86Box)
@@ -27,13 +27,14 @@ for a POST card: [POSTCODES.md](POSTCODES.md); everything that is not C: [ASM.md
 
 | Part | Size | Content |
 |---|---|---|
-| bootblock | 3,264 | reset vector, cache-as-RAM, CBFS lookup |
-| romstage | 7,540 | UMC DRAM sizing, L2 cache, PCI quiesce, chipset setup values (XIP) |
-| postcar | 8,732 | leaves cache-as-RAM, loads ramstage |
-| ramstage | 27,141 | PCI enumeration/resources, IRQ routing, Auto chipset timings, coreboot tables (LZMA) |
-| payload | 55,284 | SeaBIOS (USB 1/2 included) + setup utility + POST screen + memory test + ISA PnP (LZMA) |
-| other | 436 | CMOS layout |
-| **free** | **28,196** | |
+| bootblock | 3,456 | reset vector, cache-as-RAM, CBFS lookup |
+| romstage | 7,956 | UMC DRAM sizing, L2 cache, PCI quiesce, chipset setup values (XIP) |
+| postcar | 8,800 | leaves cache-as-RAM, loads ramstage |
+| ramstage | 27,563 | PCI enumeration/resources, IRQ routing, Auto chipset timings, coreboot tables (LZMA) |
+| payload | 67,552 | SeaBIOS (USB 1/2 included) + setup utility + POST screen + memory test + benchmarks + L2 diagnostics + ISA PnP and PnP BIOS (LZMA) |
+| escd | 4,096 | PnP ESCD in the flash parameter block at 0x1C000 |
+| other | 569 | CBFS header, file headers and alignment |
+| **free** | **11,080** | |
 
 One compression method, LZMA: SeaBIOS 38,992 vs 41,486 bytes with zstd, ramstage 36,109 vs 38,587, and the
 zstd decoder alone is 31,839 bytes against 7,706 for LZMA. Bootblock and romstage run in place from the
@@ -289,7 +290,7 @@ the original); PCI interrupts on IRQ 9-11 (15 is the secondary IDE); postcar rea
 - Only testable on the board: DRAM/L2 sizing on real SIMMs (the emulated model agrees with the original
   BIOS but is built from the chipset documentation), UMC shadow bits used for ISA ROMs, port 92h reset,
   IDE timings, PCI IRQ routing, manual chipset values (keep Auto configuration first).
-- `out/newbios.rom` keeps COM1 silent and sends POST codes ([POSTCODES.md](POSTCODES.md)) for a POST card;
+- `out/newbios.rom` sends POST codes ([POSTCODES.md](POSTCODES.md)) to a POST card and as `XX` lines on COM1;
   `DEBUG=1` builds `out/newbios-debug.rom`, which also logs romstage, ramstage and SeaBIOS on COM1 (115200 8N1).
 
 ## License

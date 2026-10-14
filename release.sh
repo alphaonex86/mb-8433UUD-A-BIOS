@@ -14,11 +14,12 @@ HALT_ON=1 "$nb/build.sh"
 "$nb/test/run_all.sh" || { echo "RELEASE REFUSED: tests failed (above)" >&2; exit 1; }
 cp "${roms[@]/#/$nb/out/}" "$nb/build/nic-rtl8139-ipxe-64k.rom" "$rel/"
 (cd "$rel" && sha256sum "${roms[@]}" nic-rtl8139-ipxe-64k.rom > SHA256SUMS)
-# The archive to publish: the ROMs, their checksums and the texts (dist/README.txt), nothing else
+# The archive to publish: the BIOS for the board's original chip, its POST codes and dist/README.txt, nothing else
 zip=$rel/newbios-mb-8433UUD-A.zip
 stage=$(mktemp -d)
 trap 'rm -r "$stage"' EXIT
-cp "${roms[@]/#/$rel/}" "$rel/nic-rtl8139-ipxe-64k.rom" "$rel/SHA256SUMS" "$nb/dist/README.txt" "$nb/LICENSE" "$stage/"
+cp "$rel/newbios.rom" "$stage/BIOS.bin"
 cp "$nb/POSTCODES.md" "$stage/POSTCODES.txt"
-(cd "$stage" && zip -q -X -D "$zip" ./*)
+cp "$nb/dist/README.txt" "$stage/"
+(cd "$stage" && zip -q -X -D "$zip" BIOS.bin POSTCODES.txt README.txt)
 ls -l "$rel"
