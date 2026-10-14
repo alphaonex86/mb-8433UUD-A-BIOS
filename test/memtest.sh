@@ -18,7 +18,7 @@ vm_ram=$(ram_cfg 1 0 0 0 128 1)
 [ "$1" = good ] || vm_ram+=$'\nstuck_addr = 2794496\nstuck_bit = 3'   # 2AA400h
 vm_start "memtest $1" "$rom"
 vm_end_of_post 60
-[ "$1" = good ] || vm_expect "Memory test fail at 2aa000"
+[ "$1" = good ] || vm_expect "Memory test fail at 2aa400"            # the exact address
 vm_setup
 vm_menu 9                                         # MEMORY TEST
 vm_wait_text "Memory   : 4096K" 5

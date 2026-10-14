@@ -7,7 +7,7 @@
 #    the 96 KiB main block changed (b.rom), the image restored (a.rom), a free byte of the boot block changed (b2.rom).
 # After a reset the new BIOS runs, the chip's upper half holds b2.rom and its unreachable lower half is untouched.
 . "$(dirname "$0")/lib.sh"
-[ -f "$nb/build/bzImage" ] || "$nb/test/linux/build.sh"
+test_linux
 "$nb/tools/build_flashrom.sh" > /dev/null || fail "flashrom does not build"
 net_boot_dir $'#!ipxe\nchain tftp://${next-server}/bzImage ip=dhcp console=ttyS0 flashtest\n'
 t=$vm_dir/tftp
@@ -43,7 +43,7 @@ grep -aq "This flash chip is too big for this programmer" "$vm/serial.log" || fa
 grep -aq "FLASHTEST-BAD-RC=1" "$vm/serial.log" || fail "a file of the wrong size was not refused"
 grep -aq "FLASHTEST-RC=0" "$vm/serial.log" || { grep -a "flashrom\|chip\|rror\|FAIL" "$vm/serial.log"; fail "bios-update failed"; }
 grep -a "^Found \|UMC\|VERIFIED" "$vm/serial.log" | tr -d '\r' | sort | uniq -c | sed 's/^/flashrom: /'
-vm_cmd reset
+vm_reset
 vm_wait_text "Press DEL to enter SETUP" 60
 vm_cmd quit                                                # 86Box saves the chip when it powers off
 for _ in $(seq 50); do kill -0 "$vm_pid" 2>/dev/null || break; sleep 0.1; done

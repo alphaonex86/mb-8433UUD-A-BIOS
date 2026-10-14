@@ -9,7 +9,7 @@ vm_key $K_F1
 vm_wait_text "Press DEL to enter SETUP, ESC for boot menu" 20
 vm_key $K_ESC
 vm_wait_text "Select boot device" 10
-vm_cmd reset
+vm_reset
 vm_wait_text "Press DEL to enter SETUP" 60                # CMOS now valid: no error prompt
 vm_setup
 vm_expect "F8 : Boot Menu"

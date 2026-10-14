@@ -1175,7 +1175,7 @@ index 80bd5a0c4c2d9899cc0ba5dc096408250baed4fb..5ec8c965c8474c1862bf787bd2146695
      dev->write_cmd_ven      = NULL;
  
 diff --git a/src/device/postcard.c b/src/device/postcard.c
-index f842cbb338f9527099a3a53bb83d7c3359e3b786..b60897fead5129ec46a12215f2ed5019e5c2fb25 100644
+index f842cbb338f9527099a3a53bb83d7c3359e3b786..f01f77757bd8ae36872eecc9461ae223f759ea1f 100644
 --- a/src/device/postcard.c
 +++ b/src/device/postcard.c
 @@ -14,6 +14,7 @@
@@ -1186,7 +1186,7 @@ index f842cbb338f9527099a3a53bb83d7c3359e3b786..b60897fead5129ec46a12215f2ed5019
  #include <stdint.h>
  #include <string.h>
  #include <wchar.h>
-@@ -139,15 +140,34 @@ postcard_reset(void)
+@@ -139,15 +140,37 @@ postcard_reset(void)
      postcard_setui();
  }
  
@@ -1211,6 +1211,9 @@ index f842cbb338f9527099a3a53bb83d7c3359e3b786..b60897fead5129ec46a12215f2ed5019
  {
 +    if (!(port & POSTCARD_MASK))
 +        box86_postlog("%02X", val);   /* every write: a step run twice shows twice */
++    const char *shot = getenv("BOX86_POSTTEXT");   /* "XX:file": the text screen when POST code XX is written */
++    if (!(port & POSTCARD_MASK) && shot && strlen(shot) > 3 && strtoul(shot, NULL, 16) == val)
++        text_dump(shot + 3);
      if (postcard_written[port & POSTCARD_MASK] &&
          (val == postcard_codes[port & POSTCARD_MASK]))
          return;
@@ -1447,15 +1450,16 @@ index 72f57018f2b1065c97e940e9d8676e9378282f2c..ea4cd5096c7713829c24271308749e0a
      if (dma_at)
          mem_invalidate_range(PhysAddress, PhysAddress + TotalSize - 1);
 diff --git a/src/include/86box/86box.h b/src/include/86box/86box.h
-index 4308a893685443e12b91fceed2e2a64d53f758cf..54ee4d2c5e98681df68a8dcc59a7f28b9ca6a34a 100644
+index 4308a893685443e12b91fceed2e2a64d53f758cf..690f407a82a28d537b96c774532090ef3c451d1a 100644
 --- a/src/include/86box/86box.h
 +++ b/src/include/86box/86box.h
-@@ -300,6 +300,8 @@ extern void pc_send_cad(void);
+@@ -300,6 +300,9 @@ extern void pc_send_cad(void);
  extern void pc_send_cae(void);
  extern void pc_send_cab(void);
  extern void pc_run(void);
 +extern void testctl_init(void);
 +extern void testctl_poll(void);
++extern void text_dump(const char *path);   /* text screen (B8000h) -> file */
  extern void pc_start(void);
  extern void pc_onesec(void);
  #ifdef _WIN32
@@ -1978,7 +1982,7 @@ index 80793cb9ab6793257185d3c9ec34a32f6102d4bb..5ca4f0ec00507194d3d8df34fb19cc28
      .name          = "Winbond W29C020 Flash BIOS",
      .internal_name = "winbond_flash_w29c020",
 diff --git a/src/network/net_rtl8139.c b/src/network/net_rtl8139.c
-index 0daf25a6a30d2e667f9a6c3d921ab279d6562fd3..c07b21a6798fd67c8640d33dc72e513e82cda01a 100644
+index 0daf25a6a30d2e667f9a6c3d921ab279d6562fd3..b37b14c31324311c47d2ef9805362fb250e21f09 100644
 --- a/src/network/net_rtl8139.c
 +++ b/src/network/net_rtl8139.c
 @@ -6,7 +6,8 @@
@@ -2121,7 +2125,29 @@ index 0daf25a6a30d2e667f9a6c3d921ab279d6562fd3..c07b21a6798fd67c8640d33dc72e513e
      s->BasicModeStatus = 0x7809;
      s->BasicModeStatus |= 0x0020; /* autonegotiation completed */
      /* preserve link state */
-@@ -1063,7 +1106,7 @@ rtl8139_reset(void *priv)
+@@ -1029,6 +1072,21 @@ rtl8139_reset_phy(RTL8139State *s)
+     s->CSCR = CSCR_F_LINK_100 | CSCR_HEART_BIT | CSCR_LD;
+ }
+ 
++static void rtl8139_rom_update(RTL8139State *s);
++
++/* Config0 as the chip loads it from its EEPROM (byte 14h): BS2-0, the boot ROM size, decide whether the expansion
++   ROM BAR exists (real RTL8139C: no BAR at all with 000, and BS2-0 cannot be written at run time) */
++static void
++rtl8139_load_config0(RTL8139State *s)
++{
++    const uint16_t *eep = s->eeprom ? nmc93cxx_eeprom_data(s->eeprom) : (const uint16_t *) s->eeprom_data;
++    uint8_t         bs  = eep[0x0a] & 7;
++
++    s->Config0       = eep[0x0a] & 0xff;
++    s->boot_rom_size = (s->boot_rom.rom && bs >= 1 && bs <= 5) ? 0x1000u << bs : 0;
++    rtl8139_rom_update(s);
++}
++
+ static void
+ rtl8139_reset(void *priv)
+ {
+@@ -1063,20 +1121,20 @@ rtl8139_reset(void *priv)
  //    s->TxConfig |= HW_REVID(1, 0, 0, 0, 0, 0, 0); // RTL-8139  HasHltClk
      s->clock_enabled = 0;
  #else
@@ -2130,7 +2156,13 @@ index 0daf25a6a30d2e667f9a6c3d921ab279d6562fd3..c07b21a6798fd67c8640d33dc72e513e
      s->clock_enabled = 1;
  #endif
  
-@@ -1076,7 +1119,7 @@ rtl8139_reset(void *priv)
+     s->bChipCmdState = CmdReset; /* RxBufEmpty bit is calculated on read from ChipCmd */
+ 
+     /* set initial state data */
+-    s->Config0 = 0x0; /* No boot ROM */
++    rtl8139_load_config0(s);
+     s->Config1 = 0xC; /* IO mapped and MEM mapped registers available */
+     s->Config3 = 0x1; /* fast back-to-back compatible */
      s->Config5 = 0x0;
  
      s->CpCmd         = 0x0; /* reset C+ mode */
@@ -2139,7 +2171,7 @@ index 0daf25a6a30d2e667f9a6c3d921ab279d6562fd3..c07b21a6798fd67c8640d33dc72e513e
  
  #if 0
      s->BasicModeCtrl = 0x2100; // 100Mbps, full duplex
-@@ -1191,6 +1234,8 @@ rtl8139_CpCmd_write(RTL8139State *s, uint32_t val)
+@@ -1191,6 +1249,8 @@ rtl8139_CpCmd_write(RTL8139State *s, uint32_t val)
  
      rtl8139_log("C+ command register write(w) val=0x%04x\n", val);
  
@@ -2148,7 +2180,27 @@ index 0daf25a6a30d2e667f9a6c3d921ab279d6562fd3..c07b21a6798fd67c8640d33dc72e513e
      s->cplus_enabled = 1;
  
      /* mask unwritable bits */
-@@ -1825,7 +1870,7 @@ rtl8139_cplus_transmit_one(RTL8139State *s)
+@@ -1320,6 +1380,8 @@ rtl8139_Cfg9346_write(RTL8139State *s, uint32_t val)
+         val = 0;
+         rtl8139_reset(s);
+     }
++    if (opmode != 0x80 && (s->Cfg9346 & 0xc0) == 0x80)
++        nmc93cxx_eeprom_write(s->eeprom, 0, 0, 0);   /* out of programming mode: the chip drives EECS low */
+ 
+     s->Cfg9346 = val;
+ }
+@@ -1354,8 +1416,8 @@ rtl8139_Config0_write(RTL8139State *s, uint32_t val)
+         return;
+     }
+ 
+-    /* mask unwritable bits */
+-    val = SET_MASKED(val, 0xf8, s->Config0);
++    /* mask unwritable bits: all, BS2-0 too (a real RTL8139C keeps them; they come from the EEPROM) */
++    val = SET_MASKED(val, 0xff, s->Config0);
+ 
+     s->Config0 = val;
+ }
+@@ -1825,7 +1887,7 @@ rtl8139_cplus_transmit_one(RTL8139State *s)
          s->currCPlusTxDesc = 0;
      } else {
          ++s->currCPlusTxDesc;
@@ -2157,7 +2209,7 @@ index 0daf25a6a30d2e667f9a6c3d921ab279d6562fd3..c07b21a6798fd67c8640d33dc72e513e
              s->currCPlusTxDesc = 0;
      }
  
-@@ -2471,12 +2516,89 @@ rtl8139_MultiIntr_read(RTL8139State *s)
+@@ -2471,12 +2533,89 @@ rtl8139_MultiIntr_read(RTL8139State *s)
      return ret;
  }
  
@@ -2247,7 +2299,7 @@ index 0daf25a6a30d2e667f9a6c3d921ab279d6562fd3..c07b21a6798fd67c8640d33dc72e513e
      switch (addr) {
          case MAC0 ... MAC0 + 4:
              s->phys[addr - MAC0] = val;
-@@ -2567,6 +2689,8 @@ rtl8139_io_writew(uint32_t addr, uint16_t val, void *priv)
+@@ -2567,6 +2706,8 @@ rtl8139_io_writew(uint32_t addr, uint16_t val, void *priv)
      RTL8139State *s = priv;
  
      addr &= 0xFF;
@@ -2256,7 +2308,7 @@ index 0daf25a6a30d2e667f9a6c3d921ab279d6562fd3..c07b21a6798fd67c8640d33dc72e513e
      switch (addr) {
          case IntrMask:
              rtl8139_IntrMask_write(s, val);
-@@ -2628,6 +2752,8 @@ rtl8139_io_writel(uint32_t addr, uint32_t val, void *priv)
+@@ -2628,6 +2769,8 @@ rtl8139_io_writel(uint32_t addr, uint32_t val, void *priv)
      RTL8139State *s = priv;
  
      addr &= 0xFF;
@@ -2265,7 +2317,7 @@ index 0daf25a6a30d2e667f9a6c3d921ab279d6562fd3..c07b21a6798fd67c8640d33dc72e513e
      switch (addr) {
          case RxMissed:
              rtl8139_log("RxMissed clearing on write\n");
-@@ -2695,8 +2821,11 @@ rtl8139_io_readb(uint32_t addr, void *priv)
+@@ -2695,8 +2838,11 @@ rtl8139_io_readb(uint32_t addr, void *priv)
  {
      RTL8139State *s = priv;
      uint8_t       ret;
@@ -2277,7 +2329,7 @@ index 0daf25a6a30d2e667f9a6c3d921ab279d6562fd3..c07b21a6798fd67c8640d33dc72e513e
      switch (addr) {
          case MAC0 ... MAC0 + 5:
              ret = s->phys[addr - MAC0];
-@@ -2780,8 +2909,11 @@ rtl8139_io_readw(uint32_t addr, void *priv)
+@@ -2780,8 +2926,11 @@ rtl8139_io_readw(uint32_t addr, void *priv)
  {
      RTL8139State *s = priv;
      uint16_t      ret;
@@ -2289,7 +2341,7 @@ index 0daf25a6a30d2e667f9a6c3d921ab279d6562fd3..c07b21a6798fd67c8640d33dc72e513e
      switch (addr) {
          case TxAddr0 ... TxAddr0 + 4 * 4 - 1:
              ret = rtl8139_TxStatus_TxAddr_read(s, s->TxAddr, TxAddr0, addr, 2);
-@@ -2861,6 +2993,8 @@ rtl8139_io_readl(uint32_t addr, void *priv)
+@@ -2861,6 +3010,8 @@ rtl8139_io_readl(uint32_t addr, void *priv)
      uint32_t      ret;
  
      addr &= 0xFF;
@@ -2298,7 +2350,7 @@ index 0daf25a6a30d2e667f9a6c3d921ab279d6562fd3..c07b21a6798fd67c8640d33dc72e513e
      switch (addr) {
          case RxMissed:
              ret = s->RxMissed;
-@@ -3099,6 +3233,36 @@ rtl8139_timer(void *priv)
+@@ -3099,6 +3250,36 @@ rtl8139_timer(void *priv)
      }
  }
  
@@ -2323,10 +2375,10 @@ index 0daf25a6a30d2e667f9a6c3d921ab279d6562fd3..c07b21a6798fd67c8640d33dc72e513e
 +{
 +    uint32_t bar = s->rom_bar[0] | (s->rom_bar[1] << 8) | (s->rom_bar[2] << 16) | ((uint32_t) s->rom_bar[3] << 24);
 +
-+    bar &= ~(s->boot_rom_size - 1) | 1;
++    bar = s->boot_rom_size ? (bar & (~(s->boot_rom_size - 1) | 1)) : 0;
 +    for (int i = 0; i < 4; i++)
 +        s->rom_bar[i] = bar >> (8 * i);
-+    if ((bar & 1) && (s->pci_conf[0x04] & PCI_COMMAND_MEM))
++    if (s->boot_rom_size && (bar & 1) && (s->pci_conf[0x04] & PCI_COMMAND_MEM))
 +        mem_mapping_set_addr(&s->boot_rom.mapping, bar & ~1u, s->boot_rom_size);
 +    else
 +        mem_mapping_disable(&s->boot_rom.mapping);
@@ -2335,7 +2387,7 @@ index 0daf25a6a30d2e667f9a6c3d921ab279d6562fd3..c07b21a6798fd67c8640d33dc72e513e
  static uint8_t
  rtl8139_pci_read(UNUSED(int func), int addr, UNUSED(int len), void *priv)
  {
-@@ -3112,9 +3276,9 @@ rtl8139_pci_read(UNUSED(int func), int addr, UNUSED(int len), void *priv)
+@@ -3112,9 +3293,9 @@ rtl8139_pci_read(UNUSED(int func), int addr, UNUSED(int len), void *priv)
          case 0x01:
              return 0x10;
          case 0x02:
@@ -2347,7 +2399,7 @@ index 0daf25a6a30d2e667f9a6c3d921ab279d6562fd3..c07b21a6798fd67c8640d33dc72e513e
          case 0x07:
              return 0x02;
          case 0x06:
-@@ -3146,9 +3310,11 @@ rtl8139_pci_read(UNUSED(int func), int addr, UNUSED(int len), void *priv)
+@@ -3146,9 +3327,11 @@ rtl8139_pci_read(UNUSED(int func), int addr, UNUSED(int len), void *priv)
          case 0x2d:
              return 0x10;
          case 0x2e:
@@ -2361,7 +2413,7 @@ index 0daf25a6a30d2e667f9a6c3d921ab279d6562fd3..c07b21a6798fd67c8640d33dc72e513e
          case 0x34:
              return 0xdc;
          case 0x3d:
-@@ -3163,7 +3329,6 @@ rtl8139_pci_write(UNUSED(int func), int addr, UNUSED(int len), uint8_t val, void
+@@ -3163,7 +3346,6 @@ rtl8139_pci_write(UNUSED(int func), int addr, UNUSED(int len), uint8_t val, void
  
      switch (addr) {
          case 0x04:
@@ -2369,7 +2421,7 @@ index 0daf25a6a30d2e667f9a6c3d921ab279d6562fd3..c07b21a6798fd67c8640d33dc72e513e
              io_removehandler((s->pci_conf[0x11] << 8), 256,
                               rtl8139_io_readb_ioport, rtl8139_io_readw_ioport, rtl8139_io_readl_ioport,
                               rtl8139_io_writeb_ioport, rtl8139_io_writew_ioport, rtl8139_io_writel_ioport,
-@@ -3174,8 +3339,9 @@ rtl8139_pci_write(UNUSED(int func), int addr, UNUSED(int len), uint8_t val, void
+@@ -3174,8 +3356,9 @@ rtl8139_pci_write(UNUSED(int func), int addr, UNUSED(int len), uint8_t val, void
                                rtl8139_io_readb_ioport, rtl8139_io_readw_ioport, rtl8139_io_readl_ioport,
                                rtl8139_io_writeb_ioport, rtl8139_io_writew_ioport, rtl8139_io_writel_ioport,
                                priv);
@@ -2381,7 +2433,7 @@ index 0daf25a6a30d2e667f9a6c3d921ab279d6562fd3..c07b21a6798fd67c8640d33dc72e513e
              break;
          case 0x05:
              s->pci_conf[addr & 0xFF] = val & 1;
-@@ -3213,14 +3379,13 @@ rtl8139_pci_write(UNUSED(int func), int addr, UNUSED(int len), uint8_t val, void
+@@ -3213,14 +3396,13 @@ rtl8139_pci_write(UNUSED(int func), int addr, UNUSED(int len), uint8_t val, void
              s->mem_base &= 0xfffff000;
  #endif
              rtl8139_log("New memory base: %08X\n", s->mem_base);
@@ -2403,7 +2455,7 @@ index 0daf25a6a30d2e667f9a6c3d921ab279d6562fd3..c07b21a6798fd67c8640d33dc72e513e
              break;
          case 0x3c:
              s->pci_conf[addr & 0xFF] = val;
-@@ -3232,6 +3397,7 @@ static void *
+@@ -3232,6 +3414,7 @@ static void *
  nic_init(const device_t *info)
  {
      RTL8139State *s                     = calloc(1, sizeof(RTL8139State));
@@ -2411,7 +2463,7 @@ index 0daf25a6a30d2e667f9a6c3d921ab279d6562fd3..c07b21a6798fd67c8640d33dc72e513e
      nmc93cxx_eeprom_params_t params;
      char          eeprom_filename[1024] = { 0 };
      char          filename[1024] = { 0 };
-@@ -3244,7 +3410,8 @@ nic_init(const device_t *info)
+@@ -3244,7 +3427,8 @@ nic_init(const device_t *info)
                      rtl8139_io_writeb_mem, rtl8139_io_writew_mem, rtl8139_io_writel_mem,
                      NULL, MEM_MAPPING_EXTERNAL, s);
      pci_add_card(PCI_ADD_NORMAL, rtl8139_pci_read, rtl8139_pci_write, s, &s->pci_slot);
@@ -2421,7 +2473,7 @@ index 0daf25a6a30d2e667f9a6c3d921ab279d6562fd3..c07b21a6798fd67c8640d33dc72e513e
  
      snprintf(eeprom_filename, sizeof(eeprom_filename), "eeprom_rtl8139c_plus_%d.nvr", s->inst);
  
-@@ -3255,7 +3422,11 @@ nic_init(const device_t *info)
+@@ -3255,7 +3439,11 @@ nic_init(const device_t *info)
  
      /* PCI vendor and device ID should be mirrored here */
      eep_data[1] = 0x10EC;
@@ -2434,29 +2486,51 @@ index 0daf25a6a30d2e667f9a6c3d921ab279d6562fd3..c07b21a6798fd67c8640d33dc72e513e
  
      /* XXX: Get proper MAC addresses from real EEPROM dumps. OID is generic Realtek */
      eep_data[7] = 0xe000;
-@@ -3292,6 +3463,21 @@ nic_init(const device_t *info)
-     snprintf(filename, sizeof(filename), "nmc93cxx_eeprom_%s_%d.nvr", info->internal_name, s->inst);
-     s->eeprom = device_add_inst_params(&nmc93cxx_device, s->inst, &params);
+@@ -3286,11 +3474,43 @@ nic_init(const device_t *info)
+     for (uint32_t i = 0; i < 6; i++)
+         s->phys[MAC0 + i] = mac_bytes[i];
  
++    uint8_t rom_bs = 0;
 +    if (device_get_config_int("bios")) {
 +        FILE *fp = rom_fopen(rom_path, "rb");
 +        if (fp) {
 +            fseek(fp, 0, SEEK_END);
-+            long len = ftell(fp);
++            long     len  = ftell(fp);
++            uint32_t size = 0x2000;
 +            fclose(fp);
-+            for (s->boot_rom_size = 0x2000; s->boot_rom_size < len && s->boot_rom_size < 0x20000;)
-+                s->boot_rom_size <<= 1;
-+            rom_init(&s->boot_rom, rom_path, 0, s->boot_rom_size, s->boot_rom_size - 1, 0,
-+                     MEM_MAPPING_EXTERNAL);
++            for (rom_bs = 1; size < len && size < 0x20000; rom_bs++)
++                size <<= 1;
++            rom_init(&s->boot_rom, rom_path, 0, size, size - 1, 0, MEM_MAPPING_EXTERNAL);
 +            mem_mapping_disable(&s->boot_rom.mapping);
 +        } else
 +            pclog("%s: boot ROM %s not found\n", info->name, rom_path);
 +    }
++    eep_data[0x0a] = (eep_data[0x0a] & ~7) | rom_bs;   /* a card set up for the ROM in its socket */
 +
++    const char *dump = getenv("BOX86_RTL8139_EEPROM");   /* "ww:xxxx ..." words of a real card's EEPROM */
++    if (dump && !s->rtl8169) {
++        FILE    *fp = fopen(dump, "r");
++        unsigned w, v;
++        if (!fp)
++            fatal("BOX86_RTL8139_EEPROM: cannot open %s\n", dump);
++        while (fscanf(fp, " %x:%x", &w, &v) == 2)
++            if (w < 64)
++                eep_data[w] = v;
++        fclose(fp);
++        for (uint32_t i = 0; i < 6; i++)
++            s->phys[MAC0 + i] = mac_bytes[i];
++    }
++
+     params.type            = NMC_93C46_x16_64;
+     params.default_content = s->eeprom_data;
+     params.filename        = filename;
+     snprintf(filename, sizeof(filename), "nmc93cxx_eeprom_%s_%d.nvr", info->internal_name, s->inst);
+     s->eeprom = device_add_inst_params(&nmc93cxx_device, s->inst, &params);
++    rtl8139_load_config0(s);
+ 
      s->nic = network_attach(s, (uint8_t *) &s->phys[MAC0], rtl8139_do_receive, rtl8139_set_link_status);
      timer_add(&s->timer, rtl8139_timer, s, 0);
-     timer_on_auto(&s->timer, 1000000.0 / cpu_pci_speed);
-@@ -3322,6 +3508,76 @@ static const device_config_t rtl8139c_config[] = {
+@@ -3322,6 +3542,76 @@ static const device_config_t rtl8139c_config[] = {
          .selection      = { { 0 } },
          .bios           = { { 0 } }
      },
@@ -2533,7 +2607,7 @@ index 0daf25a6a30d2e667f9a6c3d921ab279d6562fd3..c07b21a6798fd67c8640d33dc72e513e
      { .name = "", .description = "", .type = CONFIG_END }
  };
  // clang-format on
-@@ -3339,3 +3595,17 @@ const device_t rtl8139c_plus_device = {
+@@ -3339,3 +3629,17 @@ const device_t rtl8139c_plus_device = {
      .force_redraw  = NULL,
      .config        = rtl8139c_config
  };
@@ -2614,6 +2688,22 @@ index da506deecd6039dbe0849b78a416c2a601078062..b58a57785559a7b86715308548d75a0c
      uint32_t new_link_state = net_cards_conf[card->card_num].link_state;
      if (new_link_state != card->link_state) {
          if (card->set_link_state)
+diff --git a/src/nvr_at.c b/src/nvr_at.c
+index a9b566cc2375d873c6fcd7b646b96f3d0797afae..a0aa5297d93b9c0ca2d582960ad15140ccb7a060 100644
+--- a/src/nvr_at.c
++++ b/src/nvr_at.c
+@@ -737,8 +737,9 @@ nvr_read(uint16_t addr, void *priv)
+ 
+             case RTC_REGD:
+                 /* Bits 6-0 of this register always read 0. Bit 7 is battery state,
+-                   we should always return it set, as that means the battery is OK. */
+-                ret = REGD_VRT;
++                   we should always return it set, as that means the battery is OK.
++                   BOX86_RTC_DEAD=1: a dead battery (Dallas module), VRT reads 0 as on the MB-8433UUD-A. */
++                ret = getenv("BOX86_RTC_DEAD") ? 0 : REGD_VRT;
+                 break;
+ 
+             case 0x11:
 diff --git a/src/port_92.c b/src/port_92.c
 index cd84dda33a11a6c4b34c9a4b344ce75f86a669f6..b3d6aae851e320d3248e14851437ea7291a24515 100644
 --- a/src/port_92.c
@@ -2629,7 +2719,7 @@ index cd84dda33a11a6c4b34c9a4b344ce75f86a669f6..b3d6aae851e320d3248e14851437ea72
          timer_disable(&dev->pulse_timer);
 diff --git a/src/testctl.c b/src/testctl.c
 new file mode 100644
-index 0000000000000000000000000000000000000000..ad1f5dda4076d3978977bb7fa678e287211fae89
+index 0000000000000000000000000000000000000000..856add6acd4670afea977a7dbb99802e4695200a
 --- /dev/null
 +++ b/src/testctl.c
 @@ -0,0 +1,213 @@
@@ -2736,7 +2826,7 @@ index 0000000000000000000000000000000000000000..ad1f5dda4076d3978977bb7fa678e287
 +    rename(tmp, path);
 +}
 +
-+static void
++void
 +text_dump(const char *path)
 +{
 +    char tmp[CMD_MAX + 8];
@@ -2848,10 +2938,10 @@ index 0000000000000000000000000000000000000000..ad1f5dda4076d3978977bb7fa678e287
 +}
 diff --git a/src/usb_uhci.c b/src/usb_uhci.c
 new file mode 100644
-index 0000000000000000000000000000000000000000..e470d98e55c040dac7faa77e0ab4bfb61339da49
+index 0000000000000000000000000000000000000000..e2846a2932b9a5e3b698b0b1acda85808b820677
 --- /dev/null
 +++ b/src/usb_uhci.c
-@@ -0,0 +1,757 @@
+@@ -0,0 +1,762 @@
 +/*
 + * UHCI USB controller for firmware tests: a VIA VT83C572 (1106:3038 rev 61, the MB-8433UUD-A's USB card) whose
 + * frame list, queue heads and transfer descriptors are walked from RAM by bus mastering every ms, as the hardware
@@ -3255,7 +3345,7 @@ index 0000000000000000000000000000000000000000..e470d98e55c040dac7faa77e0ab4bfb6
 +enum { STS_USBINT = 1, STS_ERROR = 2, STS_HALTED = 0x20 };
 +enum { PORT_CCS = 1, PORT_CSC = 2, PORT_PE = 4, PORT_PEC = 8, PORT_LSDA = 0x100, PORT_RESET = 0x200 };
 +enum { TD_ACTIVE = 1 << 23, TD_STALLED = 1 << 22, TD_NAK = 1 << 19, TD_TIMEOUT = 1 << 18, TD_IOC = 1 << 24,
-+       TD_LS = 1 << 26 };
++       TD_LS = 1 << 26, TD_SPD = 1 << 29 };
 +
 +typedef struct uhci_t {
 +    uint8_t    pci[256];
@@ -3304,14 +3394,15 @@ index 0000000000000000000000000000000000000000..e470d98e55c040dac7faa77e0ab4bfb6
 +    dma_bm_write(addr, (uint8_t *) &v, 4, 4);
 +}
 +
-+/* One TD: 1 done (or not active), 0 NAK (left active), -1 error (stalled or no device). */
++/* One TD: 1 done, 0 NAK or not active (a queue head stays on it: Linux appends to its inactive dummy TD), -1 error
++   (stalled or no device). */
 +static int
 +uhci_td(uhci_t *u, uint32_t td, uint32_t *link)
 +{
 +    uint32_t status = rd32(td + 4), token = rd32(td + 8), buffer = rd32(td + 12);
 +    *link = rd32(td);
 +    if (!(status & TD_ACTIVE))
-+        return 1;
++        return 0;
 +    int       pid = token & 0xff, addr = (token >> 8) & 0x7f, ep = (token >> 15) & 0xf;
 +    int       maxlen = ((token >> 21) + 1) & 0x7ff;
 +    uint8_t   buf[1024];
@@ -3349,6 +3440,10 @@ index 0000000000000000000000000000000000000000..e470d98e55c040dac7faa77e0ab4bfb6
 +    if (n < 0) {
 +        u->sts |= STS_ERROR;
 +        return -1;
++    }
++    if (pid == 0x69 && n < maxlen && (status & TD_SPD)) {   /* short packet: the queue head stays on this TD */
++        u->sts |= STS_USBINT;
++        return 0;
 +    }
 +    return 1;
 +}

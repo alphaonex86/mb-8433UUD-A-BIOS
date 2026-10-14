@@ -1,0 +1,5 @@
+#!ipxe
+# The RTL8139 socket ROM: DHCP, then the TFTP server's pxelinux.0 (it reads pxelinux.cfg/01-<MAC>, then
+# pxelinux.cfg/default); on failure back to the BIOS, which tries the next boot device.
+dhcp || exit
+chain tftp://${next-server}/pxelinux.0 || exit

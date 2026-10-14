@@ -37,7 +37,7 @@ vm_start l2sram "$rom" ""
 vm_end_of_post
 vm_cmd out 70 3f                                    # CMOS 3Fh: the last SeaBIOS POST code
 vm_cmd out 71 b6
-vm_cmd reset
+vm_reset
 vm_wait_text "The previous POST did not finish, its last POST code: B6" 60
 vm_expect "Cache Memory +: 0K"
 vm_setup

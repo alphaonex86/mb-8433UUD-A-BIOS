@@ -12,7 +12,7 @@ vm_expect "CMOS checksum error"
 grep -q "Keyboard error" "$vm/screen.txt" && fail "keyboard error with a USB keyboard"
 vm_cmd usbkey 3a                                    # F1
 vm_wait_text "Press DEL to enter SETUP, ESC for boot menu" 20
-vm_cmd reset
+vm_reset
 vm_wait_text "Press DEL to enter SETUP" 60          # the CMOS is valid now: no error prompt
 vm_cmd usbkey 4c                                    # DEL
 vm_wait_text "CMOS SETUP UTILITY" 20

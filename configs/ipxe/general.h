@@ -1,4 +1,4 @@
-/* Netboot-only iPXE for the lower 128 KiB of the 2 Mbit flash: IPv4 + DHCP + TFTP/HTTP + Linux bzImage/script. */
+/* Netboot-only iPXE for the RTL8139's 64 KiB socket ROM: IPv4 + DHCP + TFTP/HTTP + Linux bzImage/script + PXE (pxelinux.0). */
 #undef NET_PROTO_STP
 #undef NET_PROTO_LACP
 #undef NET_PROTO_EAPOL
@@ -13,8 +13,6 @@
 #undef IMAGE_PEM
 #undef IMAGE_ELF
 #undef IMAGE_MULTIBOOT
-#undef IMAGE_PXE
-#undef PXE_STACK
 #undef PXE_MENU
 #undef SANBOOT_PROTO_ISCSI
 #undef SANBOOT_PROTO_AOE

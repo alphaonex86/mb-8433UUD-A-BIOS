@@ -38,7 +38,7 @@ for f in hw/ata.c hw/floppy.c hw/pci.c hw/pcidevice.c optionroms.c block.c hw/rt
   compile "sb_$(basename "$f" .c)" "$sb/src/$f" "${seabios[@]}" -w
 done
 compile output_seam "$src/output_seam.c" "${seabios[@]}" -w
-for f in seams setup_seam roms fuzz_ata fuzz_fdc fuzz_pcirom fuzz_isa fuzz_usb fuzz_usbhc fuzz_cmos fuzz_pnp; do
+for f in seams setup_seam roms fuzz_ata fuzz_fdc fuzz_pcirom fuzz_isa fuzz_usb fuzz_usbhc fuzz_cmos fuzz_pnp fuzz_memtest; do
   compile "$f" "$src/$f.c" "${seabios[@]}" -Wall -Wno-unused-parameter -Werror
 done
 for f in runner models; do

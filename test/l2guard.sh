@@ -16,7 +16,7 @@ vm_save                                             # valid settings from now on
 for _ in 1 2 3; do                                  # unfinished POSTs: in the setup, then reset
   vm_wait_text "Press DEL to enter SETUP" 60
   l2_page "256 KB, write-back, enabled"
-  vm_cmd reset
+  vm_reset
 done
 vm_wait_text "Press DEL to enter SETUP" 60
 rm -f "$vm/cmos3e.txt"                              # "in" appends: only this read
@@ -27,10 +27,10 @@ read -r _ cmos3e < "$vm/cmos3e.txt"
 [ -n "$cmos3e" ] || fail "CMOS 3Eh not read"
 vm_cmd out 70 3e
 vm_cmd out 71 "$(printf '%02x' $((16#$cmos3e | 0x80)))"
-vm_cmd reset
+vm_reset
 vm_wait_text "Press DEL to enter SETUP" 60
 l2_page "256 KB, 1 bank\(s\), OFF: hang in the previous L2 init"
-vm_cmd reset
+vm_reset
 vm_wait_text "Press DEL to enter SETUP" 60
 l2_page "256 KB, write-back, enabled"
 vm_stop

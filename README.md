@@ -5,7 +5,8 @@ DOS and Linux 6.18 run as under the original, the RTL8139C socket ROM boots over
 Award-like setup utility (main menu, pages, values) configures the board, the POST shows CPU, memory
 test and drives. Developed and tested in a patched 86Box before touching the real board.
 
-Status 2026-10-12: all emulator tests pass (`test/run_all.sh`). Not yet run on the real board. POST codes
+Status 2026-10-14: all emulator tests pass (`test/run_all.sh`); runs on the real board (DOS, Linux from IDE and
+USB, network boot). Published ROMs: `out/release/newbios-mb-8433UUD-A.zip` (`release.sh`, `dist/README.txt`). POST codes
 for a POST card: [POSTCODES.md](POSTCODES.md); everything that is not C: [ASM.md](ASM.md).
 
 ## Screenshots (86Box)

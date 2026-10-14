@@ -1380,8 +1380,21 @@ index 9de24906d8f2c508e1c38ae5e9fcf9777b79fea2..e99abaeb9445801e08ed5f7d5651e8cc
  };
  
  // ata.c
+diff --git a/src/hw/blockcmd.c b/src/hw/blockcmd.c
+index 6b6fea9707484d211b9a5d8b0bf9040392873899..ce18362b9a4daaf6e50f6535fa49752b06ae1858 100644
+--- a/src/hw/blockcmd.c
++++ b/src/hw/blockcmd.c
+@@ -321,6 +321,8 @@ scsi_drive_setup(struct drive_s *drive, const char *s, int prio)
+         return -1;
+ 
+     ret = scsi_is_ready(&dop);
++    if (!ret)
++        post_code(POST_DISK_READY);
+     if (ret) {
+         dprintf(1, "scsi_is_ready returned %d\n", ret);
+         return ret;
 diff --git a/src/hw/floppy.c b/src/hw/floppy.c
-index 14738d9f39b2e8b7edb0a136c326c592f23bc7d6..87dbb552953e9f7a527ba130ef8ba7bf389bf324 100644
+index 14738d9f39b2e8b7edb0a136c326c592f23bc7d6..562e9fc3a67d9ef78e385ee92cb53d6a1a86ae3c 100644
 --- a/src/hw/floppy.c
 +++ b/src/hw/floppy.c
 @@ -20,6 +20,7 @@
@@ -1409,17 +1422,39 @@ index 14738d9f39b2e8b7edb0a136c326c592f23bc7d6..87dbb552953e9f7a527ba130ef8ba7bf
              addFloppy(1, type & 0x0f);
      } else {
          u8 type = romfile_loadint("etc/floppy0", 0);
-@@ -416,6 +420,16 @@ floppy_drive_recal(u8 floppyid)
+@@ -375,8 +379,8 @@ floppy_drive_pio(u8 floppyid, int command, u8 *param)
+     u8 motor_mask = FLOPPY_DOR_MOTOR_A << floppyid;
+     int motor_already_running = floppy_dor_read() & motor_mask;
+ 
+-    // Turn on motor of selected drive, DMA & int enabled, normal operation
+-    floppy_dor_write(motor_mask | FLOPPY_DOR_IRQ | FLOPPY_DOR_RESET | floppyid);
++    // Turn on motor of selected drive (the others spinning keep on: INT 08 stops them), DMA & int enabled
++    floppy_dor_write((floppy_dor_read() & 0xf0) | motor_mask | FLOPPY_DOR_IRQ | FLOPPY_DOR_RESET | floppyid);
+ 
+     // If the motor was just started, wait for it to get up to speed
+     if (!motor_already_running && !CONFIG_QEMU)
+@@ -416,6 +420,27 @@ floppy_drive_recal(u8 floppyid)
      return DISK_RET_SUCCESS;
  }
  
++// Motors of the drives set up in CMOS on early in the POST (bit 0: drive 0, bit 1: drive 1): spun up by
++// floppy_drive_check() at the boot prompt, which then skips its 1 s wait.
++void
++floppy_motors_early(int drives)
++{
++    if (!CONFIG_FLOPPY || !drives)
++        return;
++    SET_BDA(floppy_motor_counter, 255);
++    floppy_dor_mask(0, (drives & 3) * FLOPPY_DOR_MOTOR_A);
++}
++
 +// POST check of a drive set up in CMOS: recalibrate it; -1 if it did not reach track 0.
 +int
 +floppy_drive_check(u8 floppyid)
 +{
 +    u8 param[2] = { floppyid };
 +    int ret = floppy_drive_pio(floppyid, FC_RECALIBRATE, param);
-+    floppy_dor_write(FLOPPY_DOR_IRQ | FLOPPY_DOR_RESET);   // motor off
++    floppy_dor_mask(FLOPPY_DOR_MOTOR_A << floppyid, 0);   // its motor off
 +    return ret || (param[0] & 0xd0) ? -1 : 0;   // ST0: abnormal end or equipment check
 +}
 +
@@ -1600,7 +1635,7 @@ index 7f9f440342c5d1f204beef185c87e32ce9ecd7e3..02a4b300dbb5858046637a5bde78e42f
  {
      u16 port = GET_GLOBAL(TimerPort);
 diff --git a/src/hw/usb-ehci.c b/src/hw/usb-ehci.c
-index b1f091a5fd3f8741b486e6c1cf39ee9d38346c6e..1e4b2036cfa40ce4d8c1dc3524f839d50cef58f2 100644
+index b1f091a5fd3f8741b486e6c1cf39ee9d38346c6e..b40f39ba58a1b242aef47aa0a7a267ed0995ace0 100644
 --- a/src/hw/usb-ehci.c
 +++ b/src/hw/usb-ehci.c
 @@ -187,7 +187,7 @@ ehci_waittick(struct usb_ehci_s *cntl)
@@ -1612,29 +1647,59 @@ index b1f091a5fd3f8741b486e6c1cf39ee9d38346c6e..1e4b2036cfa40ce4d8c1dc3524f839d5
  
      struct ehci_qh *start = cntl->async_qh;
      struct ehci_qh *pos = start;
-@@ -317,9 +317,19 @@ ehci_controller_setup(struct pci_device *pci)
+@@ -276,7 +276,9 @@ configure_ehci(void *data)
+     PendingEHCI--;
+ 
+     // Find devices
++    post_code(POST_USB_EHCI_PORTS);
+     int count = check_ehci_ports(cntl);
++    post_code(POST_USB_EHCI_DONE);
+     ehci_free_pipes(cntl);
+     if (count)
+         // Success
+@@ -292,6 +294,17 @@ fail:
+     free(cntl);
+ }
+ 
++static int
++ehci_wait_halted(struct usb_ehci_s *cntl, u32 ms)
++{
++    u32 end = timer_calc(ms), sts;
++    while (!((sts = readl(&cntl->regs->usbsts)) & STS_HALT) || sts == ~0   // all ones: not answering
++           || readl(&cntl->regs->usbcmd) & CMD_HCRESET)
++        if (timer_check(end))
++            return 0;
++    return 1;
++}
++
+ static void
+ ehci_controller_setup(struct pci_device *pci)
+ {
+@@ -317,9 +330,21 @@ ehci_controller_setup(struct pci_device *pci)
  
      dprintf(1, "EHCI init on dev %pP (regs=%p)\n", pci, cntl->regs);
  
 -    pci_enable_busmaster(pci);
 +    // Halt it before bus mastering (at most 16 microframes): after a warm boot the controller may still run
-+    // the schedule an OS left in RAM.
++    // the schedule an OS left in RAM. One that does not stop (a VIA after DOS's jmp FFFF:0) halts on HCRESET.
 +    writel(&cntl->regs->usbcmd, readl(&cntl->regs->usbcmd) & ~(CMD_RUN | CMD_ASE | CMD_PSE));
-+    u32 end = timer_calc(5), sts;
-+    while (!((sts = readl(&cntl->regs->usbsts)) & STS_HALT) || sts == ~0)   // all ones: not answering
-+        if (timer_check(end)) {
++    if (!ehci_wait_halted(cntl, 5)) {
++        dprintf(1, "EHCI %pP does not halt: HCRESET\n", pci);
++        writel(&cntl->regs->usbcmd, CMD_HCRESET);
++        if (!ehci_wait_halted(cntl, 250)) {
 +            dprintf(1, "EHCI %pP does not halt: left off\n", pci);
 +            PendingEHCI--;
 +            free(cntl);
 +            return;
 +        }
++    }
  
 -    // XXX - check for and disable SMM control?
 +    pci_enable_busmaster(pci);
  
      run_thread(configure_ehci, cntl);
  }
-@@ -389,7 +399,7 @@ ehci_alloc_intr_pipe(struct usbdevice_s *usbdev
+@@ -389,7 +414,7 @@ ehci_alloc_intr_pipe(struct usbdevice_s *usbdev
      struct usb_ehci_s *cntl = container_of(
          usbdev->hub->cntl, struct usb_ehci_s, usb);
      int frameexp = usb_get_period(usbdev, epdesc);
@@ -1643,7 +1708,7 @@ index b1f091a5fd3f8741b486e6c1cf39ee9d38346c6e..1e4b2036cfa40ce4d8c1dc3524f839d5
  
      if (frameexp > 10)
          frameexp = 10;
-@@ -460,7 +470,7 @@ ehci_realloc_pipe(struct usbdevice_s *usbdev, struct usb_pipe *upipe
+@@ -460,7 +485,7 @@ ehci_realloc_pipe(struct usbdevice_s *usbdev, struct usb_pipe *upipe
          return ehci_alloc_intr_pipe(usbdev, epdesc);
      struct usb_ehci_s *cntl = container_of(
          usbdev->hub->cntl, struct usb_ehci_s, usb);
@@ -1652,7 +1717,7 @@ index b1f091a5fd3f8741b486e6c1cf39ee9d38346c6e..1e4b2036cfa40ce4d8c1dc3524f839d5
  
      struct usb_pipe *usbpipe = usb_get_freelist(&cntl->usb, eptype);
      if (usbpipe) {
-@@ -550,7 +560,7 @@ ehci_send_pipe(struct usb_pipe *p, int dir, const void *cmd
+@@ -550,7 +575,7 @@ ehci_send_pipe(struct usb_pipe *p, int dir, const void *cmd
      if (! CONFIG_USB_EHCI)
          return -1;
      struct ehci_pipe *pipe = container_of(p, struct ehci_pipe, pipe);
@@ -1726,7 +1791,7 @@ index 0e1da34860ee851c11ce934b26dba831e1e95288..e0496d386683110462c9b0492498834c
  }
  
 diff --git a/src/hw/usb-uhci.c b/src/hw/usb-uhci.c
-index f3faf75a8403123bebbf0a505c5b476672f61bfa..fecb9941218188a80939a706d1e2da85b4285719 100644
+index f3faf75a8403123bebbf0a505c5b476672f61bfa..467f9609bcbb6f3517966c0223aca08ff386ce8c 100644
 --- a/src/hw/usb-uhci.c
 +++ b/src/hw/usb-uhci.c
 @@ -134,7 +134,7 @@ uhci_waittick(u16 iobase)
@@ -1738,7 +1803,17 @@ index f3faf75a8403123bebbf0a505c5b476672f61bfa..fecb9941218188a80939a706d1e2da85
  
      struct uhci_qh *pos = (void*)(cntl->framelist->links[0] & ~UHCI_PTR_BITS);
      for (;;) {
-@@ -261,10 +261,11 @@ uhci_controller_setup(struct pci_device *pci)
+@@ -226,7 +226,9 @@ configure_uhci(void *data)
+     outw(USBCMD_RS | USBCMD_CF | USBCMD_MAXP, cntl->iobase + USBCMD);
+ 
+     // Find devices
++    post_code(POST_USB_UHCI_PORTS);
+     int count = check_uhci_ports(cntl);
++    post_code(POST_USB_UHCI_DONE);
+     uhci_free_pipes(cntl);
+     if (count)
+         // Success
+@@ -261,10 +263,11 @@ uhci_controller_setup(struct pci_device *pci)
  
      dprintf(1, "UHCI init on dev %pP (io=%x)\n", pci, cntl->iobase);
  
@@ -1752,7 +1827,7 @@ index f3faf75a8403123bebbf0a505c5b476672f61bfa..fecb9941218188a80939a706d1e2da85
      run_thread(configure_uhci, cntl);
  }
  
-@@ -292,7 +293,7 @@ uhci_alloc_intr_pipe(struct usbdevice_s *usbdev
+@@ -292,7 +295,7 @@ uhci_alloc_intr_pipe(struct usbdevice_s *usbdev
      struct usb_uhci_s *cntl = container_of(
          usbdev->hub->cntl, struct usb_uhci_s, usb);
      int frameexp = usb_get_period(usbdev, epdesc);
@@ -1761,7 +1836,7 @@ index f3faf75a8403123bebbf0a505c5b476672f61bfa..fecb9941218188a80939a706d1e2da85
  
      if (frameexp > 10)
          frameexp = 10;
-@@ -369,7 +370,7 @@ uhci_realloc_pipe(struct usbdevice_s *usbdev, struct usb_pipe *upipe
+@@ -369,7 +372,7 @@ uhci_realloc_pipe(struct usbdevice_s *usbdev, struct usb_pipe *upipe
          return uhci_alloc_intr_pipe(usbdev, epdesc);
      struct usb_uhci_s *cntl = container_of(
          usbdev->hub->cntl, struct usb_uhci_s, usb);
@@ -1770,7 +1845,7 @@ index f3faf75a8403123bebbf0a505c5b476672f61bfa..fecb9941218188a80939a706d1e2da85
  
      struct usb_pipe *usbpipe = usb_get_freelist(&cntl->usb, eptype);
      if (usbpipe) {
-@@ -457,7 +458,7 @@ uhci_send_pipe(struct usb_pipe *p, int dir, const void *cmd
+@@ -457,7 +460,7 @@ uhci_send_pipe(struct usb_pipe *p, int dir, const void *cmd
      if (! CONFIG_USB_UHCI)
          return -1;
      struct uhci_pipe *pipe = container_of(p, struct uhci_pipe, pipe);
@@ -1780,7 +1855,7 @@ index f3faf75a8403123bebbf0a505c5b476672f61bfa..fecb9941218188a80939a706d1e2da85
      int maxpacket = GET_LOWFLAT(pipe->pipe.maxpacket);
      int lowspeed = GET_LOWFLAT(pipe->pipe.speed);
 diff --git a/src/hw/usb.c b/src/hw/usb.c
-index 38a866adb7f4ebdc09644a597906c56226d2e30f..acdc05497be3bda68eb11a7830e39f06d6f29bf1 100644
+index 38a866adb7f4ebdc09644a597906c56226d2e30f..bd9616e0e2dd6ebd3e7c1ae80ac3aa7d83d36a1f 100644
 --- a/src/hw/usb.c
 +++ b/src/hw/usb.c
 @@ -10,6 +10,7 @@
@@ -1930,7 +2005,16 @@ index 38a866adb7f4ebdc09644a597906c56226d2e30f..acdc05497be3bda68eb11a7830e39f06
      free(config);
      return 0;
  }
-@@ -475,6 +540,14 @@ usb_enumerate(struct usbhub_s *hub)
+@@ -454,6 +519,8 @@ usb_hub_port_setup(void *data)
+     // Configure the device
+     int count = configure_usb_device(usbdev);
+     usb_free_pipe(usbdev, usbdev->defpipe);
++    if (count)
++        post_code(POST_USB_DEVICE);
+     if (!count)
+         hub->op->disconnect(hub, port);
+     hub->devcount += count;
+@@ -475,6 +542,14 @@ usb_enumerate(struct usbhub_s *hub)
      u32 portcount = hub->portcount;
      hub->threads = portcount;
      hub->detectend = timer_calc(usb_time_sigatt);
@@ -1945,7 +2029,7 @@ index 38a866adb7f4ebdc09644a597906c56226d2e30f..acdc05497be3bda68eb11a7830e39f06
  
      // Launch a thread for every port.
      int i;
-@@ -487,6 +560,7 @@ usb_enumerate(struct usbhub_s *hub)
+@@ -487,6 +562,7 @@ usb_enumerate(struct usbhub_s *hub)
          memset(usbdev, 0, sizeof(*usbdev));
          usbdev->hub = hub;
          usbdev->port = i;
@@ -1953,6 +2037,14 @@ index 38a866adb7f4ebdc09644a597906c56226d2e30f..acdc05497be3bda68eb11a7830e39f06
          run_thread(usb_hub_port_setup, usbdev);
      }
  
+@@ -502,6 +578,7 @@ usb_setup(void)
+     if (! CONFIG_USB)
+         return;
+     dprintf(3, "init usb\n");
++    post_code(POST_USB);
+     usb_time_sigatt = romfile_loadint("etc/usb-time-sigatt", USB_TIME_SIGATT);
+     xhci_setup();
+     ehci_setup();
 diff --git a/src/hw/usb.h b/src/hw/usb.h
 index 887f2064cf3a5b9b1a37f5e0f84943840d73535d..caee9acb82df6e0971875bdd7d5e4b16967950b7 100644
 --- a/src/hw/usb.h
@@ -2153,7 +2245,7 @@ index 7d702d161f597f222f5271f7682e5da27689a9b1..f8ffc7680e1cb2da2f536b77c559f8df
  int rom_confirm(u32 size);
 diff --git a/src/newbios_cmos.h b/src/newbios_cmos.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..569bddea48ba48f8fca1a8eefa5f1b0f73ea6cab
+index 0000000000000000000000000000000000000000..aab321ded71cf9e2a1a8ccaed898d9112dc9f2e8
 --- /dev/null
 +++ b/src/newbios_cmos.h
 @@ -0,0 +1,67 @@
@@ -2176,7 +2268,7 @@ index 0000000000000000000000000000000000000000..569bddea48ba48f8fca1a8eefa5f1b0f
 +#define NB_CMOS_SUM       0x7c   /* big-endian 16-bit sum of NB_CMOS_BASE..NB_CMOS_SIG */
 +#define NB_CMOS_BOOTFAIL  0x7e   /* POSTs started (coreboot) since the last completed one (SeaBIOS) */
 +#define NB_CMOS_CPUSIG    0x7f   /* CPU family << 4 | model from DX at reset (bootblock), for CPUs without CPUID */
-+#define NB_SIG_VALUE      0xa6   /* layout version: change when indexes or meanings change */
++#define NB_SIG_VALUE      0xa7   /* layout version: change when indexes, meanings or defaults change (test/cmoslayout.sh) */
 +#define NB_LAYOUT_COUNT   65     /* NB_COUNT of this version (setup.c checks it) */
 +#define NB_BOOTFAIL_MAX   2      /* coreboot falls back to chipset defaults after this many failures */
 +#define NB_HDD_NONE       1      /* drive types: 0 auto, 1 none, 2-47 type 1-46 (16: reserved 15), 48 user */
@@ -3481,6 +3573,46 @@ index f267666c9beb50c84ab9fdea74604c270d1c8659..6d59d4f05c751ec555f0aee5c86c3b82
  
      // Detect ram and setup internal malloc.
      qemu_preinit();
+diff --git a/src/post_serial.h b/src/post_serial.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..78e51d340a3386eb7f8e1c5bbcd5cdcac5398022
+--- /dev/null
++++ b/src/post_serial.h
+@@ -0,0 +1,34 @@
++/*
++ * Each POST code also goes out on COM1 (3F8h, 115200 8N1) as "XX\r\n": a PC on a null-modem cable timestamps the
++ * lines (tools/post_time.py), as the Am5x86 has no clock to time the POST itself. Shared by coreboot and SeaBIOS
++ * (build.sh copies it into both trees); outb/inb (value, port) come from the includer.
++ */
++#ifndef NEWBIOS_POST_SERIAL_H
++#define NEWBIOS_POST_SERIAL_H
++
++#define POST_COM1 0x3f8
++
++static inline void post_serial_wait(unsigned char lsr_bit)
++{
++	for (int n = 0; n < 10000 && !(inb(POST_COM1 + 5) & lsr_bit); n++)   /* no UART: bounded */
++		;
++}
++
++static inline void post_serial(unsigned char code)
++{
++	static const char hex[] = "0123456789ABCDEF";
++	const char line[4] = { hex[code >> 4], hex[code & 15], '\r', '\n' };
++
++	post_serial_wait(0x40);                      /* all sent: the divisor can change */
++	outb(0x83, POST_COM1 + 3);                   /* 8N1, divisor latch */
++	outb(1, POST_COM1);                          /* 115200 */
++	outb(0, POST_COM1 + 1);
++	outb(0x03, POST_COM1 + 3);
++	outb(0x03, POST_COM1 + 4);                   /* DTR, RTS */
++	for (int i = 0; i < 4; i++) {
++		post_serial_wait(0x20);
++		outb(line[i], POST_COM1);
++	}
++}
++
++#endif
 diff --git a/src/resume.c b/src/resume.c
 index 559eac645ade5472db79692adb9865d883eb4c63..79804de8e62e8a83a55ce2f26344d46e38dea1b8 100644
 --- a/src/resume.c
@@ -4042,10 +4174,10 @@ index bdbb72c7a0ea265d2537933c735d5615c6a025bb..4fc6fba937bb862cb1e186bd909fb4c7
  reset_vector:
 diff --git a/src/setup.c b/src/setup.c
 new file mode 100644
-index 0000000000000000000000000000000000000000..d76300c9bf6aea4fd6af7027bba021278d91efef
+index 0000000000000000000000000000000000000000..5016e2c7b6138002d181ef95b69159102b506e64
 --- /dev/null
 +++ b/src/setup.c
-@@ -0,0 +1,4435 @@
+@@ -0,0 +1,4449 @@
 +// Award-style CMOS setup utility (DEL during POST), the settings it keeps in CMOS (newbios_cmos.h)
 +// and the POST options SeaBIOS applies from them.
 +//
@@ -4070,9 +4202,11 @@ index 0000000000000000000000000000000000000000..d76300c9bf6aea4fd6af7027bba02127
 +#include "string.h" // memset
 +#include "util.h" // setup_menu
 +#include "x86.h" // cpuid
++#include "post_serial.h" // post_serial (after x86.h: inb, outb)
 +
 +u8 Setting[NB_COUNT];
 +static int SetupDefaulted, ChipsetFallback, PrevPostCode;   // POST warnings, see setup_post_warnings()
++static int PostWarned;                                       // warnings shown, the boot goes on: a longer prompt
 +u8 SetupL1Off VARFSEG;                          // "CPU Internal Cache" disabled, for handle_resume()
 +static u16 Password;   // hash, 0 = none
 +
@@ -4395,6 +4529,7 @@ index 0000000000000000000000000000000000000000..d76300c9bf6aea4fd6af7027bba02127
 +post_code(u8 code)
 +{
 +    outb(code, 0x80);
++    post_serial(code);
 +    if (PrevLastPost < 0)
 +        PrevLastPost = rtc_read(NB_CMOS_LASTPOST);
 +    rtc_write(NB_CMOS_LASTPOST, code);
@@ -4454,7 +4589,7 @@ index 0000000000000000000000000000000000000000..d76300c9bf6aea4fd6af7027bba02127
 +    if (!(errors & halts[Setting[NB_HALT_ON]])) {
 +        if (errors) {
 +            printf("WARNING: POST errors above, boot continues (Halt On)\n");
-+            msleep(3000);
++            PostWarned = 1;   // the boot prompt then lasts 3 s, time to read them (not 3 s more before it)
 +        }
 +        return;
 +    }
@@ -4492,6 +4627,7 @@ index 0000000000000000000000000000000000000000..d76300c9bf6aea4fd6af7027bba02127
 +        memcpy(Setting, Defaults, sizeof(Setting));
 +    }
 +    cmos_write(Setting, Hdd, Password);
++    floppy_motors_early((Setting[NB_FLOPPY_A] ? 1 : 0) | (Setting[NB_FLOPPY_B] ? 2 : 0));
 +    superio_apply();
 +    ide_channels_apply();
 +    return Setting[NB_BOOT1] | Setting[NB_BOOT2] << 4 | Setting[NB_BOOT3] << 8
@@ -4519,7 +4655,8 @@ index 0000000000000000000000000000000000000000..d76300c9bf6aea4fd6af7027bba02127
 +setup_boot_delay(void)
 +{
 +    static const u16 ms[] = { 1000, 2000, 3000, 5000 };
-+    return ms[Setting[NB_BOOT_DELAY] & 3];
++    u32 delay = ms[Setting[NB_BOOT_DELAY] & 3];
++    return PostWarned && delay < 3000 ? 3000 : delay;
 +}
 +
 +int
@@ -6317,27 +6454,31 @@ index 0000000000000000000000000000000000000000..d76300c9bf6aea4fd6af7027bba02127
 +    return scan == 0x01;
 +}
 +
-+// Test the dwords 'step' apart in one 4 KiB block without losing them (POST data lives in this RAM):
-+// two patterns, each written, flushed from the internal cache and read back. This runs before the L2 is
-+// enabled (setup_l2_cache), as by the original BIOS: on this chipset a flush also empties the L2.
-+static int
-+memtest_block(u32 *block, u32 *save, int step)
++// Test the dwords 'step' apart in n dwords from block without losing them (POST data lives in this RAM):
++// two patterns, each written, flushed from the internal cache and read back; returns the first failing
++// address (0: none). This runs before the L2 is enabled (setup_l2_cache), as by the original BIOS: on this
++// chipset a flush also empties the L2.
++static u32
++memtest_block(u32 *block, u32 *save, int n, int step)
 +{
-+    int i, bad = 0, n = 1024;
++    u32 bad = 0;
++    int i;
 +    for (i = 0; i < n; i += step)
-+        save[i] = block[i];
++        save[i / step] = block[i];
 +    for (i = 0; i < n; i += step)
 +        block[i] = (u32)&block[i] ^ 0x5aa5a55a;
 +    wbinvd();
 +    for (i = 0; i < n; i += step)
-+        bad |= block[i] != ((u32)&block[i] ^ 0x5aa5a55a);
++        if (block[i] != ((u32)&block[i] ^ 0x5aa5a55a) && !bad)
++            bad = (u32)&block[i];
 +    for (i = 0; i < n; i += step)
 +        block[i] = ~((u32)&block[i] ^ 0x5aa5a55a);
 +    wbinvd();
 +    for (i = 0; i < n; i += step)
-+        bad |= block[i] != ~((u32)&block[i] ^ 0x5aa5a55a);
++        if (block[i] != ~((u32)&block[i] ^ 0x5aa5a55a) && (!bad || (u32)&block[i] < bad))
++            bad = (u32)&block[i];
 +    for (i = 0; i < n; i += step)
-+        block[i] = save[i];
++        block[i] = save[i / step];
 +    return bad;
 +}
 +
@@ -6355,21 +6496,26 @@ index 0000000000000000000000000000000000000000..d76300c9bf6aea4fd6af7027bba02127
 +static void
 +memtest(void)
 +{
-+    u32 *save = malloc_tmphigh(4096), start, end, a, bad = 0;
++    u32 *save = malloc_tmphigh(4096), start, end, a, len, bad = 0;
 +    int step = Setting[NB_QUICK_POST] ? 256 : 1, n, skipped = 0;
 +    u32 kb = 1024, total = 1024 + ext_mem_kb();
 +    char fail[40];
 +    if (!save)
 +        return;
 +    scr_puts(23, 0, AttrText, "Press DEL to enter SETUP, ESC to skip memory test");   // keyboard ready
++    u32 chunk = 4096 * step;   // its tested dwords fill the 4 KiB save buffer: one cache flush per chunk
 +    for (n = 0; !skipped && malloc_tmphigh_free(n, &start, &end); n++) {
-+        for (a = ALIGN(start, 4096); a + 4096 <= end && !skipped; a += 4096, kb += 4) {
++        for (a = ALIGN(start, 4096); a + 4096 <= end && !skipped; a += len) {
++            len = end - a < chunk ? ALIGN_DOWN(end - a, 4096) : chunk;
 +            u32 flags = save_flags();
 +            irq_disable();
-+            if (memtest_block((void*)a, save, step) && !bad)
-+                bad = a;
++            u32 b = memtest_block((void*)a, save, len / 4, step);
++            if (!bad)
++                bad = b;
 +            restore_flags(flags);
-+            if (!(kb & 1023)) {
++            u32 mb = kb >> 10;
++            kb += len >> 10;
++            if (kb >> 10 != mb) {
 +                memtest_show(kb, "");
 +                skipped = memtest_key();
 +            }
@@ -8500,10 +8646,10 @@ index 4c8e5df68b49543cd5a8f55d778f3a51c80ccd48..f0f59aee519cb3338d6de296f1168fa8
  
      // Restore cmos index register
 diff --git a/src/util.h b/src/util.h
-index 9226bd135295ae9535bb9f23d57753c940f11250..fba1c470d78cff7ad72f9e061649e9020db9dc40 100644
+index 9226bd135295ae9535bb9f23d57753c940f11250..7f7b672659a2bb200185dba0bdb1a5b019bf9960 100644
 --- a/src/util.h
 +++ b/src/util.h
-@@ -48,6 +48,45 @@ int boot_lchs_find_scsi_device(struct pci_device *pci, int target, int lun,
+@@ -48,6 +48,48 @@ int boot_lchs_find_scsi_device(struct pci_device *pci, int target, int lun,
  int boot_lchs_find_ata_device(struct pci_device *pci, int chanid, int slave,
                                struct chs_s *chs);
  
@@ -8515,6 +8661,9 @@ index 9226bd135295ae9535bb9f23d57753c940f11250..fba1c470d78cff7ad72f9e061649e902
 +enum { POST_SEABIOS = 0xb0, POST_PLATFORM, POST_VGA, POST_BANNER, POST_DEVICES, POST_MEMTEST,
 +       POST_OPTIONROMS, POST_SUMMARY, POST_PROMPT, POST_SETUP, POST_SETUP_MEMTEST, POST_PREPBOOT,
 +       POST_BOOT, POST_NO_BOOT };
++// USB setup, in its threads (they interleave with the codes above): the time of each step on a COM1 capture
++enum { POST_USB = 0xd0, POST_USB_EHCI_PORTS, POST_USB_EHCI_DONE, POST_USB_UHCI_PORTS, POST_USB_UHCI_DONE,
++       POST_USB_DEVICE, POST_DISK_READY };
 +void post_code(u8 code);
 +extern int SetupRequested, SetupBootMenu;
 +extern u8 SetupL1Off;
@@ -8549,7 +8698,7 @@ index 9226bd135295ae9535bb9f23d57753c940f11250..fba1c470d78cff7ad72f9e061649e902
  // bootsplash.c
  void enable_vga_console(void);
  void enable_bootsplash(void);
-@@ -147,6 +186,8 @@ void pirtable_setup(void);
+@@ -147,6 +189,8 @@ void pirtable_setup(void);
  void make_bios_writable(void);
  void make_bios_readonly(void);
  void qemu_reboot(void);
@@ -8558,15 +8707,16 @@ index 9226bd135295ae9535bb9f23d57753c940f11250..fba1c470d78cff7ad72f9e061649e902
  
  // fw/smbios.c
  void smbios_legacy_setup(void);
-@@ -169,6 +210,7 @@ void dma_setup(void);
+@@ -169,6 +213,8 @@ void dma_setup(void);
  // hw/floppy.c
  extern struct floppy_ext_dbt_s diskette_param_table2;
  void floppy_setup(void);
 +int floppy_drive_check(u8 floppyid);
++void floppy_motors_early(int drives);
  struct drive_s *init_floppy(int floppyid, int ftype);
  int find_floppy_type(u32 size);
  int floppy_process_op(struct disk_op_s *op);
-@@ -186,6 +228,8 @@ void sdcard_setup(void);
+@@ -186,6 +232,8 @@ void sdcard_setup(void);
  void timer_setup(void);
  void pmtimer_setup(u16 ioport);
  void tsctimer_setfreq(u32 khz, const char *src);
@@ -8575,7 +8725,7 @@ index 9226bd135295ae9535bb9f23d57753c940f11250..fba1c470d78cff7ad72f9e061649e902
  u32 timer_calc(u32 msecs);
  u32 timer_calc_usec(u32 usecs);
  int timer_check(u32 end);
-@@ -246,6 +290,8 @@ void pmm_prepboot(void);
+@@ -246,6 +294,8 @@ void pmm_prepboot(void);
  // pnpbios.c
  u16 get_pnp_offset(void);
  void pnp_init(void);
@@ -8584,7 +8734,7 @@ index 9226bd135295ae9535bb9f23d57753c940f11250..fba1c470d78cff7ad72f9e061649e902
  
  // post.c
  void interface_init(void);
-@@ -264,7 +310,7 @@ void serial_setup(void);
+@@ -264,7 +314,7 @@ void serial_setup(void);
  void lpt_setup(void);
  
  // version.c

@@ -8,7 +8,7 @@ vm_wait_text "Press F1 to continue, DEL to enter SETUP" 60   # fresh CMOS
 vm_setup
 vm_save
 vm_wait_text "Press DEL to enter SETUP, ESC for boot menu" 60
-vm_cmd reset
+vm_reset
 vm_wait_text "Press DEL to enter SETUP, ESC for boot menu" 60
 vm_cmd quit                                         # 86Box saves the flash when it powers off
 for _ in $(seq 50); do kill -0 "$vm_pid" 2>/dev/null || break; sleep 0.1; done

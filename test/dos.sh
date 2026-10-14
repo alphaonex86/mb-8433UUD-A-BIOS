@@ -6,17 +6,20 @@
 mkdir -p "$vm_dir"
 nasm -f bin -o "$vm_dir/shmem.com" "$nb/test/dos/shmem.asm"
 dos_disk "$vm_dir/hdd.img" "$vm_dir/shmem.com"
-vm_start dos "$rom" "$(disk_cfg "$vm_dir/hdd.img")
+rm -f "$vm_dir/post-b5.txt"
+BOX86_POSTTEXT=B5:$vm_dir/post-b5.txt vm_start dos "$rom" "$(disk_cfg "$vm_dir/hdd.img")
 
 [Network]
 net_01_card = wd8013ebt
 net_01_net_type = slirp
 net_01_link = 0"
-vm_wait_text "Detecting HDD Primary Master +\.\.\. 86B_HD" 30   # POST screen: board, release date, drives
-vm_expect "^Biostar MB-8433UUD-A"
-vm_expect "^[0-3][0-9]/[01][0-9]/20[0-9]{2} "
-vm_expect "Detecting HDD Primary Slave +\.\.\. None"
-vm_expect "^rel-[^ ]*-[0-9]{8}_[0-9]{6} "             # SeaBIOS version and build time, nothing after
+for _ in $(seq 300); do [ -f "$vm_dir/post-b5.txt" ] && break; sleep 0.1; done
+b5() { grep -Eq "$1" "$vm_dir/post-b5.txt" 2>/dev/null || fail "POST screen at B5 (memory test) lacks /$1/"; }
+b5 "Detecting HDD Primary Master +\.\.\. 86B_HD"        # POST screen: board, release date, drives
+b5 "^Biostar MB-8433UUD-A"
+b5 "^[0-3][0-9]/[01][0-9]/20[0-9]{2} "
+b5 "Detecting HDD Primary Slave +\.\.\. None"
+b5 "^rel-[^ ]*-[0-9]{8}_[0-9]{6} "                       # SeaBIOS version and build time, nothing after
 vm_end_of_post
 vm_wait_text "DOS-TEST-OK" 90
 expect_bits "$(vm_cr0)" 0x60000000 0 "L1 cache enabled in DOS (CR0.CD, NW)"

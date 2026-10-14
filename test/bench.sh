@@ -24,7 +24,7 @@ back() {  # ESC to the HARDWARE INFORMATION menu (text mode again), then the mai
   vm_wait_text "Quit Without Saving" 5
   vm_key $K_Y
   vm_wait_text "DOS-TEST-OK" 90
-  vm_cmd reset
+  vm_reset
   vm_end_of_post
 }
 png=$(page 6 25)

@@ -57,7 +57,7 @@ EOF
   exec {vm_ctl}<>"$vm/ctl"   # read-write open never blocks; commands wait in the pipe for 86Box
   cat 0<>"$vm/com1.out" > "$vm/serial.log" & vm_serial=$!   # read-write: no EOF when 86Box reopens COM1
   BOX86_TESTCTL=$vm/ctl BOX86_POSTLOG=$vm/post.log SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
-    "$emu" -N -X both -P "$vm" -R "$vm/roms" > "$vm/86box.log" 2>&1 & vm_pid=$!
+    "$emu" -N -X "$([ -n "${vm_nvr:-}" ] && echo flash || echo both)" -P "$vm" -R "$vm/roms" > "$vm/86box.log" 2>&1 & vm_pid=$!
   trap vm_kill EXIT
 }
 
@@ -111,15 +111,22 @@ vm_ocr_expect() {  # extended regex the OCR text must show
 
 vm_key() { for k; do vm_cmd key "$k"; sleep 0.2; done; }   # set 1 scan codes (hex), typed one by one
 
-vm_cad() {  # [timeout] Ctrl+Alt+Del, then the reboot's POST up to its prompt (the old screen may show that text)
-  local resets end=$((SECONDS + ${1:-60}))
+vm_reboot() {  # command, [timeout]: a reset by the command, then the reboot's POST up to its prompt (POST code B8);
+               # the old screen may still show any text the caller waits for
+  local resets end=$((SECONDS + ${2:-60}))
   resets=$(grep -c '^RESET' "$vm/post.log")
-  vm_cmd combo 1d 38 53
+  $1
   until [ "$(grep -c '^RESET' "$vm/post.log")" -gt "$resets" ] && awk '/^RESET/ { p = 0 } /^B8$/ { p = 1 }
       END { exit !p }' "$vm/post.log"; do
-    [ $SECONDS -lt $end ] || fail "Ctrl+Alt+Del: no reboot to the POST prompt"
+    [ $SECONDS -lt $end ] || fail "$1: no reboot to the POST prompt"
     sleep 0.2
   done
+}
+
+vm_reset() { vm_reboot "vm_cmd reset" "$@"; }   # [timeout] hard reset
+
+vm_cad() {  # [timeout] Ctrl+Alt+Del, then the reboot's POST prompt
+  vm_reboot "vm_cmd combo 1d 38 53" "$@"
   vm_wait_text "Press DEL to enter SETUP" 10
 }
 
@@ -180,11 +187,19 @@ nic_cfg() {  # boot ROM file -> 86Box config lines for the board's RTL8139C (no 
   printf '[Realtek RTL8139C+ #1]\nbios = 1\ncplus = 0\n'
 }
 
+test_linux() {  # build/bzImage, the test Linux, rebuilt when its init or kernel config changed
+  local k=$nb/build/bzImage
+  [ -f "$k" ] && [ "$k" -nt "$nb/test/linux/init" ] && [ "$k" -nt "$nb/test/linux/kernel.config" ] \
+    || "$nb/test/linux/build.sh" > /dev/null || fail "test Linux does not build"
+}
+
 etherboot=$nb/test/roms/etherboot-5.4.4-rtl8139.rom   # the operator's card ROM (first 32 KiB of its chip, not published)
 
+ipxe_rom=$nb/build/nic-rtl8139-ipxe-64k.rom   # iPXE as the card's socket ROM (tools/build_ipxe.sh)
+
 net_boot_dir() {  # boot.ipxe text -> $vm_dir/tftp on SLiRP: the socket ROM's Etherboot loads boot.pxe (iPXE), which
-                  # does DHCP again and runs boot.ipxe
-  [ -f "$nb/build/ipxe-chain.pxe" ] || "$nb/tools/build_ipxe.sh"
+                  # does DHCP again and runs boot.ipxe (an iPXE socket ROM runs boot.ipxe directly)
+  [ -f "$nb/build/ipxe-chain.pxe" ] && [ -f "$ipxe_rom" ] || "$nb/tools/build_ipxe.sh"
   mkdir -p "$vm_dir/tftp"
   cp "$nb/build/ipxe-chain.pxe" "$vm_dir/tftp/boot.pxe"
   printf '%s' "$1" > "$vm_dir/tftp/boot.ipxe"

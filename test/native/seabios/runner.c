@@ -29,7 +29,7 @@ const char *__ubsan_default_options(void)
 }
 
 static const struct fuzz_area *const Areas[] = { &fuzz_ata, &fuzz_fdc, &fuzz_pcirom, &fuzz_isa, &fuzz_usb, &fuzz_usbhc, &fuzz_cmos_area,
-						 &fuzz_pnp };
+						 &fuzz_pnp, &fuzz_memtest };
 #define NAREAS (int)(sizeof(Areas) / sizeof(Areas[0]))
 #define MAX_CLASSES 64
 

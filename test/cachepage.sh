@@ -29,7 +29,7 @@ vm_info 0                                           # CPU, CACHE AND MEMORY
 vm_wait_text "L2 cache +: 256 KB, write-back, enabled" 5
 vm_cmd out 70 3e                                    # an init that stopped in its write-through fill
 vm_cmd out 71 a3
-vm_cmd reset
+vm_reset
 vm_wait_text "Press DEL to enter SETUP" 60
 vm_setup
 vm_info 0

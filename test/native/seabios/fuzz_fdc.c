@@ -318,6 +318,7 @@ static void run(unsigned index)
 	fuzz_set_setting(NB_FLOPPY_A, Spec.setting_a);
 	fuzz_set_setting(NB_FLOPPY_B, Spec.setting_b);
 	fuzz_set_setting(NB_SWAP_FLOPPY, Spec.swap);
+	fuzz_set_setting(NB_HALT_ON, 1);           /* No Errors: no F1 wait (no keyboard here) in the timed POST check */
 	fuzz_cmos_store();
 	fuzz_setup_init();
 	if (Spec.raw_cmos >= 0)
@@ -341,7 +342,9 @@ static void run(unsigned index)
 	if (n != expected)
 		fuzz_fail("%d floppies registered, CMOS 10h=%02x gives %d", n, fuzz_cmos[0x10], expected);
 
+	unsigned long long warnings_us = fuzz_now_us;
 	fuzz_setup_post_warnings();
+	warnings_us = fuzz_now_us - warnings_us;
 	int broken = Spec.faults & (F_FLOAT | F_ZERO | F_RQM_NEVER | F_IRQ_NEVER | F_RESET_NO_IRQ | F_DIO_STUCK);
 	int bad_drive = (fuzz_setting(NB_FLOPPY_A) && (!Spec.drive[0] || broken))
 		|| (fuzz_setting(NB_FLOPPY_B) && (!Spec.drive[1] || broken));
@@ -349,6 +352,8 @@ static void run(unsigned index)
 	if (fuzz_screen_has("Floppy disk(s) fail") != bad_drive && (!Spec.faults || broken)
 	    && !(Spec.faults & F_IRQ_SPURIOUS))
 		fuzz_fail("POST %s \"Floppy disk(s) fail\"", bad_drive ? "does not show" : "shows");
+	if (good && warnings_us > 100000)          /* motors on since setup_init(): no spin-up wait at the prompt */
+		fuzz_fail("floppy check at the boot prompt took %llu ms", warnings_us / 1000);
 	fuzz_post_us = fuzz_now_us;
 
 	for (int b = 0; b < fuzz_nboots; b++) {

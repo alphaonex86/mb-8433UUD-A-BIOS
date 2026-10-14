@@ -154,10 +154,17 @@ void rtc_write(u8 index, u8 val)
 	cmos[index] = val;
 }
 
-void outb(u8 value __attribute__((unused)), u16 port)   /* the L2 steps' POST codes */
+void outb(u8 value __attribute__((unused)), u16 port)   /* the L2 steps' POST codes, also on COM1 */
 {
-	if (port != 0x80)
+	if (port != 0x80 && (port < 0x3f8 || port > 0x3fc))
 		fatal("SeaBIOS port write not modelled at", port);
+}
+
+u8 inb(u16 port)                                        /* COM1 line status: always ready to send */
+{
+	if (port != 0x3fd)
+		fatal("SeaBIOS port read not modelled at", port);
+	return 0x60;
 }
 
 u32 cr0_read(void)

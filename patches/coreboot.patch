@@ -1853,15 +1853,16 @@ index 7a6d328cf41acac81707d8c165494cef7d318817..95c6ff8b55640f863980e755ac5abff3
  	}
  	case CBFS_COMPRESS_LZ4: {
 diff --git a/src/mainboard/biostar/mb8433/Makefile.inc b/src/mainboard/biostar/mb8433/Makefile.inc
-index 067135c8edb68b785d8bea4f5160008304a9b43d..0966fef68c23075d4185afe9e505ae10d454dbad 100644
+index 067135c8edb68b785d8bea4f5160008304a9b43d..37db980c000acc767da73ade149845fb1b04e896 100644
 --- a/src/mainboard/biostar/mb8433/Makefile.inc
 +++ b/src/mainboard/biostar/mb8433/Makefile.inc
-@@ -3,3 +3,5 @@ bootblock-y += bootblock.c
+@@ -3,3 +3,6 @@ bootblock-y += bootblock.c
  
  ramstage-$(CONFIG_GENERATE_PIRQ_TABLE) += irq_tables.c
  ramstage-$(CONFIG_GENERATE_SMBIOS_TABLES) += smbios.c
 +romstage-y += newbios.c
 +ramstage-y += newbios.c
++all-y += post_serial.c
 diff --git a/src/mainboard/biostar/mb8433/irq_tables.c b/src/mainboard/biostar/mb8433/irq_tables.c
 index 5775d519435e9b210737826dbc818eb427e96b0a..d44d1069b628256b6bf2813d03d079461e13b92e 100644
 --- a/src/mainboard/biostar/mb8433/irq_tables.c
@@ -2122,7 +2123,7 @@ index 0000000000000000000000000000000000000000..7740150563112a63afe5505d7b252512
 +}
 diff --git a/src/mainboard/biostar/mb8433/newbios_cmos.h b/src/mainboard/biostar/mb8433/newbios_cmos.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..569bddea48ba48f8fca1a8eefa5f1b0f73ea6cab
+index 0000000000000000000000000000000000000000..aab321ded71cf9e2a1a8ccaed898d9112dc9f2e8
 --- /dev/null
 +++ b/src/mainboard/biostar/mb8433/newbios_cmos.h
 @@ -0,0 +1,67 @@
@@ -2145,7 +2146,7 @@ index 0000000000000000000000000000000000000000..569bddea48ba48f8fca1a8eefa5f1b0f
 +#define NB_CMOS_SUM       0x7c   /* big-endian 16-bit sum of NB_CMOS_BASE..NB_CMOS_SIG */
 +#define NB_CMOS_BOOTFAIL  0x7e   /* POSTs started (coreboot) since the last completed one (SeaBIOS) */
 +#define NB_CMOS_CPUSIG    0x7f   /* CPU family << 4 | model from DX at reset (bootblock), for CPUs without CPUID */
-+#define NB_SIG_VALUE      0xa6   /* layout version: change when indexes or meanings change */
++#define NB_SIG_VALUE      0xa7   /* layout version: change when indexes, meanings or defaults change (test/cmoslayout.sh) */
 +#define NB_LAYOUT_COUNT   65     /* NB_COUNT of this version (setup.c checks it) */
 +#define NB_BOOTFAIL_MAX   2      /* coreboot falls back to chipset defaults after this many failures */
 +#define NB_HDD_NONE       1      /* drive types: 0 auto, 1 none, 2-47 type 1-46 (16: reserved 15), 48 user */
@@ -2191,6 +2192,63 @@ index 0000000000000000000000000000000000000000..569bddea48ba48f8fca1a8eefa5f1b0f
 +};
 +
 +#define NB_CMOS_GET(read, i)  (((read)(NB_CMOS_BASE + (i) / 2) >> ((i) % 2 * 4)) & 0x0f)
++
++#endif
+diff --git a/src/mainboard/biostar/mb8433/post_serial.c b/src/mainboard/biostar/mb8433/post_serial.c
+new file mode 100644
+index 0000000000000000000000000000000000000000..286931d5c40c525c6b6158408466d688200ee9ca
+--- /dev/null
++++ b/src/mainboard/biostar/mb8433/post_serial.c
+@@ -0,0 +1,11 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++
++#include <arch/io.h>
++#include <console/console.h>
++
++#include "post_serial.h"
++
++void mainboard_post(uint8_t value)
++{
++	post_serial(value);
++}
+diff --git a/src/mainboard/biostar/mb8433/post_serial.h b/src/mainboard/biostar/mb8433/post_serial.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..78e51d340a3386eb7f8e1c5bbcd5cdcac5398022
+--- /dev/null
++++ b/src/mainboard/biostar/mb8433/post_serial.h
+@@ -0,0 +1,34 @@
++/*
++ * Each POST code also goes out on COM1 (3F8h, 115200 8N1) as "XX\r\n": a PC on a null-modem cable timestamps the
++ * lines (tools/post_time.py), as the Am5x86 has no clock to time the POST itself. Shared by coreboot and SeaBIOS
++ * (build.sh copies it into both trees); outb/inb (value, port) come from the includer.
++ */
++#ifndef NEWBIOS_POST_SERIAL_H
++#define NEWBIOS_POST_SERIAL_H
++
++#define POST_COM1 0x3f8
++
++static inline void post_serial_wait(unsigned char lsr_bit)
++{
++	for (int n = 0; n < 10000 && !(inb(POST_COM1 + 5) & lsr_bit); n++)   /* no UART: bounded */
++		;
++}
++
++static inline void post_serial(unsigned char code)
++{
++	static const char hex[] = "0123456789ABCDEF";
++	const char line[4] = { hex[code >> 4], hex[code & 15], '\r', '\n' };
++
++	post_serial_wait(0x40);                      /* all sent: the divisor can change */
++	outb(0x83, POST_COM1 + 3);                   /* 8N1, divisor latch */
++	outb(1, POST_COM1);                          /* 115200 */
++	outb(0, POST_COM1 + 1);
++	outb(0x03, POST_COM1 + 3);
++	outb(0x03, POST_COM1 + 4);                   /* DTR, RTS */
++	for (int i = 0; i < 4; i++) {
++		post_serial_wait(0x20);
++		outb(line[i], POST_COM1);
++	}
++}
 +
 +#endif
 diff --git a/src/northbridge/umc/um8881/bootblock.c b/src/northbridge/umc/um8881/bootblock.c

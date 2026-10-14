@@ -17,4 +17,9 @@ if grep -q flashtest /proc/cmdline; then
   flashrom -p internal --force -r read.rom && cat a.rom a.rom | cmp - read.rom && bios-update b.rom && bios-update a.rom \
     && bios-update b2.rom; echo "FLASHTEST-RC=$?"
 fi
+# test/nicrom.sh: tools/rtl8139-bootrom switches the card's boot ROM off, on (64 KiB) and off in its EEPROM
+if grep -q romtest /proc/cmdline; then
+  mkdir -p /tmp && cd /tmp && tftp -g -r rtl8139-bootrom 10.0.2.2 && chmod +x rtl8139-bootrom
+  ./rtl8139-bootrom && ./rtl8139-bootrom 0 && ./rtl8139-bootrom 64 && ./rtl8139-bootrom 0; echo "ROMTEST-RC=$?"
+fi
 exec sh

@@ -79,13 +79,13 @@ expect_bits "$c1" 0xca 0xc2 "LPT 278 ECP, COM1 3F8 (SIO C1)"
 # Two unfinished POSTs: coreboot ignores the manual chipset values once, POST completion re-arms them.
 vm_cmd out 70 7e
 vm_cmd out 71 02
-vm_cmd reset
+vm_reset
 vm_end_of_post 60
 check_chipset 0
 vm_expect "Chipset setup values not used after 2 unfinished POSTs"
 vm_wait_text "DOS-TEST-OK" 60                     # POST completed
 expect_bits "$(vm_cr0)" 0x40000000 0x40000000 "L1 cache still disabled in DOS (CR0.CD)"
-vm_cmd reset
+vm_reset
 vm_end_of_post 60
 check_chipset 1
 vm_stop

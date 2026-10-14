@@ -122,6 +122,10 @@ unsigned short fuzz_password(void);
 void fuzz_setup_menu(void);
 void fuzz_setup_boot_password(void);
 void fuzz_setup_post(void);
+unsigned fuzz_setup_memtest(int quick);          /* setup.c memtest() on fuzz_free: its first bad address */
+extern void (*fuzz_wbinvd_hook)(void);          /* called by wbinvd() */
+extern unsigned fuzz_free[4][2];                /* malloc_tmphigh_free(): the free RAM ranges */
+extern int fuzz_nfree;
 
 struct fuzz_area {
 	const char *name;
@@ -132,6 +136,6 @@ struct fuzz_area {
 	void (*describe)(unsigned index, char *buf, int size);
 	void (*run)(unsigned index);
 };
-extern const struct fuzz_area fuzz_ata, fuzz_fdc, fuzz_pcirom, fuzz_isa, fuzz_usb, fuzz_usbhc, fuzz_cmos_area, fuzz_pnp;
+extern const struct fuzz_area fuzz_ata, fuzz_fdc, fuzz_pcirom, fuzz_isa, fuzz_usb, fuzz_usbhc, fuzz_cmos_area, fuzz_pnp, fuzz_memtest;
 
 #endif

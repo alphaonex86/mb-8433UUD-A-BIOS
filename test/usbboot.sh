@@ -21,7 +21,7 @@ marker USB usb
 vm_start usbboot "$rom" "$(disk_cfg "$vm_dir/ide.img")"
 vm_end_of_post
 vm_wait_text "BOOTED-IDE" 120
-vm_cmd reset
+vm_reset
 vm_end_of_post 60
 vm_setup
 vm_menu 1                                           # BIOS FEATURES SETUP

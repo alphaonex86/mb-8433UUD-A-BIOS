@@ -29,7 +29,8 @@ enum {
 	F_STUCK_RESET = 1 << 7,                     /* port reset never ends */
 	F_SOC = 1 << 8,                             /* OHCI: scheduling overrun count bits set in HcCommandStatus */
 	F_RUNNING = 1 << 9,                         /* found running its schedule (warm boot) */
-	F_NFAULTS = 10
+	F_RESET_HALTS = 1 << 10,                    /* EHCI: halts on HCRESET only (the board's VIA after a warm boot) */
+	F_NFAULTS = 11
 };
 
 struct hc {
@@ -40,6 +41,7 @@ struct hc {
 	u32 reg[0x400];
 	int roothub_read;
 	unsigned long long reset_until[16];
+	int hc_reset;                               /* HCRESET done */
 };
 static struct hc Hc[NHC];
 
@@ -129,6 +131,8 @@ static unsigned ehci_read(unsigned off, int size)
 	if (r == 0x04)
 		v = (v & ~0x1000) | ((h->reg[0] & 1) && !(h->faults & F_NO_HALT) ? 0 : 0x1000)
 			| ((h->reg[0] & 0x40) ? 0x20 : 0);  /* halted, async advance doorbell */
+	if (r == 0x04 && (h->faults & F_RESET_HALTS) && !h->hc_reset)
+		v &= ~0x1000;
 	if (r >= 0x44 && r < 0x44 + 4 * 15) {
 		int p = (r - 0x44) / 4, dev = h->device[p];
 		v = (v & ~(1 | 4 | 0xc00)) | (dev ? 1 : 0) | (dev == 2 ? 0x400 : 0);
@@ -152,6 +156,11 @@ static void ehci_write(unsigned off, unsigned value, int size)
 	}
 	if (r == 0x00 && (value & 0x40))
 		value &= ~0x40;                         /* doorbell answered at once */
+	if (r == 0x00 && (value & 2) && !(h->faults & F_NO_RESET)) {
+		h->hc_reset = 1;                        /* HCRESET: the controller stops, halted */
+		value &= ~1;
+	} else if (r == 0x00 && (h->faults & F_RESET_HALTS) && !h->hc_reset)
+		value |= 1;                             /* RUN clear ignored: still runs */
 	if (r >= 0x44 && r < 0x44 + 4 * 15) {
 		int p = (r - 0x44) / 4;
 		if ((value & 0x100) && !(h->faults & F_STUCK_RESET))
@@ -206,7 +215,7 @@ static void models_start(void)
  ****************************************************************/
 
 static const unsigned Faults[] = { 0, F_ABSENT_BAR, F_ZERO_BAR, F_FLOAT, F_ZERO, F_NO_RESET, F_NO_HALT, F_FLAP,
-				   F_STUCK_RESET, F_FLAP | F_STUCK_RESET, F_SOC, F_RUNNING };
+				   F_STUCK_RESET, F_FLAP | F_STUCK_RESET, F_SOC, F_RUNNING, F_RUNNING | F_RESET_HALTS };
 #define NF (int)ARRAY_SIZE(Faults)
 static const u8 PortCounts[] = { 0, 1, 2, 15, 255 };
 
@@ -275,6 +284,7 @@ static void build(unsigned index)
 static const char *const FaultNames[F_NFAULTS] = {
 	"BAR all ones", "BAR zero", "registers float", "registers read 0", "never resets", "never halts/frame stopped",
 	"ports flap", "port stuck in reset", "HcCommandStatus SOC bits set", "found running (warm boot)",
+	"halts on HCRESET only",
 };
 
 static void describe(unsigned index, char *buf, int size)
@@ -315,6 +325,10 @@ static void run(unsigned index)
 		fuzz_fail("boot device registered behind a controller that never runs its schedule");
 	if (Hc[OHCI].present && Hc[OHCI].faults == F_SOC && !Hc[OHCI].roothub_read)
 		fuzz_fail("OHCI whose HcCommandStatus has other bits than HCR set never started");
+	struct hc *e = &Hc[EHCI];   /* left running by a warm boot, halting on HCRESET only: still used (the board's case) */
+	if (e->present && e->faults == (F_RUNNING | F_RESET_HALTS) && e->caplength == 0x10 && e->ports && e->device[0] == 3
+	    && !e->reset_until[0])
+		fuzz_fail("EHCI found running and halting only on HCRESET was left off: its ports were never checked");
 	for (int k = 0; k < 10; k++)
 		usb_check_event();
 }

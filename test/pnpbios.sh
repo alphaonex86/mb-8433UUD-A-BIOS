@@ -24,8 +24,7 @@ vm_expect "PNP ISA 01 020B"                        # one card, read port 20Bh
 vm_expect "^ESCD [0-9A-F]{4} 02  01 RTL8019  00 @@@0000"   # the card (slot = CSN 1), the system board
 vm_expect "ESCD-WRITE-OK"
 vm_expect "PNP-PM-OK"
-vm_cmd reset
-for _ in $(seq 50); do vm_screen; grep -q "PNP-TEST-DONE" "$vm/screen.txt" || break; sleep 0.2; done
+vm_reset
 vm_end_of_post 60
 vm_wait_text "PNP-TEST-DONE" 90
 vm_expect "^ESCD [0-9A-F]{4} 02  01 RTL8019  00 @@@0000"

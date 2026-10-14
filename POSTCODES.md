@@ -5,6 +5,10 @@ ISA or PCI POST card. If the board hangs, the card keeps showing the step that d
 code is unique. Both ROMs (`out/newbios.rom` and `out/newbios-debug.rom`) send the same codes; the
 debug ROM also logs the steps in text on COM1 (115200 8N1).
 
+Both also send each code from coreboot's C stages and SeaBIOS on COM1 (115200 8N1) as one line `XX`:
+on a PC with a null-modem cable, `tools/post_time.py /dev/ttyUSB0` prints each with its time (the
+board has no clock to time its POST itself).
+
 In 86Box the POST card is on in `run_86box.sh` (codes in the status bar) and in the tests
 (`BOX86_POSTLOG`). `test/post.sh` checks that a boot sends exactly the "Normal boot" codes below, in
 this order, so this table is the reference.
@@ -64,6 +68,7 @@ this order, so this table is the reference.
 | `B2` | SeaBIOS | video card option ROM | video card or its ROM |
 | `B3` | SeaBIOS | POST screen (text mode 80x25) | |
 | `B4` | SeaBIOS | keyboard, USB, floppy and IDE drives detected | a drive that does not answer |
+| `D0` | SeaBIOS | USB setup starts (its threads run on beside the next steps: `D1`-`D6`) | a USB controller |
 | `B5` | SeaBIOS | POST memory test | (the screen shows the memory count) |
 | `C1` | SeaBIOS | L2 init: L1 off, WBINVD (the POST screen's cache line shows each step) | |
 | `C2` | SeaBIOS | L2 init: write-through fill of the scratch range | L2 SRAM, tag RAM or their timing |
@@ -84,6 +89,10 @@ this order, so this table is the reference.
 | `B9` | setup utility (DEL) |
 | `BA` | MEMORY TEST in setup |
 | `C1`-`C7` | CACHE TEST in setup: its L2 steps (`C6` speed test, `C7` L2 off) |
+| `D1` / `D2` | an EHCI (USB 2.0) controller starts / ends checking its ports |
+| `D3` / `D4` | a UHCI (USB 1.1) controller starts / ends checking its ports |
+| `D5` | a USB device configured (keyboard, disk, hub...) |
+| `D6` | a USB or SCSI disk answered "ready" (TEST UNIT READY) |
 | `BD` | no bootable device: the message is on screen, retry after 60 s |
 | `E0` | coreboot: a stage or SeaBIOS was not found or not loaded (flash content) |
 | `EE` | coreboot: code that must not return did return |

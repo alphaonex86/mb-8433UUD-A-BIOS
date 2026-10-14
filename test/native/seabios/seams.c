@@ -144,7 +144,8 @@ u32 save_flags(void) { return F_IF; }
 void restore_flags(u32 flags) { }
 void cpu_relax(void) { fuzz_tick(1); }
 void hlt(void) { yield(); }
-void wbinvd(void) { }
+void (*fuzz_wbinvd_hook)(void);
+void wbinvd(void) { if (fuzz_wbinvd_hook) fuzz_wbinvd_hook(); }
 u32 cr0_read(void) { return Cr0; }
 void cr0_write(u32 cr0) { Cr0 = cr0; }
 void cr0_mask(u32 off, u32 on) { Cr0 = (Cr0 & ~off) | on; }
@@ -268,7 +269,17 @@ void *_malloc(struct zone_s *zone, u32 size, u32 align)
 	return ptr;
 }
 
-int malloc_tmphigh_free(int n, u32 *start, u32 *end) { return 0; }
+u32 fuzz_free[4][2];
+int fuzz_nfree;
+
+int malloc_tmphigh_free(int n, u32 *start, u32 *end)
+{
+	if (n >= fuzz_nfree)
+		return 0;
+	*start = fuzz_free[n][0];
+	*end = fuzz_free[n][1];
+	return 1;
+}
 
 static u32 RomEnd = BUILD_ROM_START;
 

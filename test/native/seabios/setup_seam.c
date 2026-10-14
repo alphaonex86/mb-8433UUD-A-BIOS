@@ -9,6 +9,14 @@ void fuzz_setup_init(void)
     setup_init();
 }
 
+u32 fuzz_setup_memtest(int quick)
+{
+    Setting[NB_QUICK_POST] = quick;
+    scr_open();
+    memtest();
+    return MemtestBad;
+}
+
 /* The setup's disk benchmark on every hard disk the drivers found: read errors end it, results within range;
    then its result and comparison pages are drawn (VGA memory and text calls of the models). */
 int fuzz_setup_disk_bench(void)
