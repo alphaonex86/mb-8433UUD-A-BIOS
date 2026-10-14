@@ -346,6 +346,11 @@ void l2_fill(u32 base, u32 dwords, u8 hb50) { pci_config_writeb(pci_to_bdf(0, 0x
 void l2_fill_off(u32 base, u32 dwords, u8 hb50) { pci_config_writeb(pci_to_bdf(0, 0x10, 0), 0x50, hb50 & 0x30); }
 u32 l2_line_works(u32 addr, u32 size, u8 hb50) { return 1; }
 u32 l2_caches(u32 addr, u32 size, u8 hb50) { return !(hb50 & 0x20); }
+/* L2 SRAM TEST's asm (forced hit on physical addresses): no L2 SRAM answers here; 86Box tests the real paths */
+u32 l2s_probe(u32 x, u32 v, u32 y, u32 w) { return ~v; }
+void l2s_pass(void) { }
+void l2s_tags(void) { }
+void l2s_dirty(void) { }
 
 void __warn_timeout(int lineno, const char *fname) { fuzz_note("timeout %s:%d", fname, lineno); }
 void __warn_noalloc(int lineno, const char *fname) { fuzz_note("out of memory %s:%d", fname, lineno); }

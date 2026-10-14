@@ -1,0 +1,66 @@
+flashrom: complete pci_filter_init where the dynamic loader ignores symbol versions
+
+uClibc-ng's ld.so binds libpci's pre-3.8 pci_filter_init (it does not support symbol versioning), which leaves
+device_class, device_class_mask and prog_if as stack garbage, while the 3.8 pci_filter_match compares them: no
+chipset was ever found ("No chipset found") on the MB-8433UUD-A's Buildroot/uClibc-ng system.
+
+--- a/pcidev.c
++++ b/pcidev.c
+@@ -141,6 +141,21 @@
+ 	return (uintptr_t)addr;
+ }
+ 
++/*
++ * pci_filter_init, completed: a dynamic loader without symbol versioning (uClibc-ng) binds libpci's pre-3.8
++ * pci_filter_init, which leaves the fields added in 3.8 uninitialized, while pci_filter_match then compares them:
++ * no device matched (garbage class or programming interface).
++ */
++static void filter_init(struct pci_access *a, struct pci_filter *f)
++{
++	pci_filter_init(a, f);
++#if defined(PCI_LIB_VERSION) && PCI_LIB_VERSION >= 0x030800
++	f->device_class = -1;
++	f->device_class_mask = ~0U;
++	f->prog_if = -1;
++#endif
++}
++
+ struct pci_dev *pcidev_scandev(struct pci_filter *filter, struct pci_dev *start)
+ {
+ 	struct pci_dev *temp;
+@@ -159,7 +174,7 @@
+ 	struct pci_dev *temp = NULL;
+ 	struct pci_filter filter;
+ 
+-	pci_filter_init(NULL, &filter);
++	filter_init(NULL, &filter);
+ 	filter.vendor = vendor;
+ 	filter.device = device;
+ 
+@@ -176,7 +191,7 @@
+ {
+ 	struct pci_filter filter;
+ 
+-	pci_filter_init(NULL, &filter);
++	filter_init(NULL, &filter);
+ 	filter.vendor = vendor;
+ 	filter.device = device;
+ 
+@@ -197,7 +212,7 @@
+ 	struct pci_filter filter;
+ 	uint16_t tmp2;
+ 
+-	pci_filter_init(NULL, &filter);
++	filter_init(NULL, &filter);
+ 	filter.vendor = vendor;
+ 
+ 	while ((temp = pcidev_scandev(&filter, temp))) {
+@@ -254,7 +269,7 @@
+ 
+ 	if (pci_init_common() != 0)
+ 		return NULL;
+-	pci_filter_init(pacc, &filter);
++	filter_init(pacc, &filter);
+ 
+ 	/* Filter by bb:dd.f (if supplied by the user). */
+ 	pcidev_bdf = extract_programmer_param_str(cfg, "pci");

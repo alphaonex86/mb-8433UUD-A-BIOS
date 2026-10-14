@@ -1,7 +1,7 @@
 /* PCI: devices with holes, aliases, bridges, odd header types, classes and BARs, and expansion ROMs with
    every header field wrong, run through pci_probe_devices(), vgarom_setup(), optionrom_setup() (ISA ROM
-   scan included) and the setup's PCI page; the boot ROM in a 2 Mbit flash's lower half (iPXE for the Realtek
-   NICs, read at FLASH_LOW_BASE while IBC 57h bits 7-6 are set): valid or not, for which NIC. */
+   scan included) and the setup's PCI page; a ROM in a 2 Mbit flash's lower half (unreachable on the board: A17 of
+   its 1 Mbit socket is high) is never run, valid or not, whatever the NIC, and IBC 57h is left alone. */
 #include "biosvar.h"
 #include "hw/pci.h"
 #include "hw/pcidevice.h"
@@ -356,15 +356,12 @@ static void check(void)
 	if (valid && !fuzz_nromcalls)
 		fuzz_fail("a valid PnP option ROM was not run");
 	if (fuzz_pci_read(0x90, 0x54) >> 24)
-		fuzz_fail("IBC 57h left at %02x (the flash's lower half still decoded)", fuzz_pci_read(0x90, 0x54) >> 24);
+		fuzz_fail("IBC 57h changed to %02x (the flash's lower half decoded)", fuzz_pci_read(0x90, 0x54) >> 24);
 	int ran_flash = 0;
 	for (int c = 0; c < fuzz_nromcalls; c++)
 		ran_flash |= pcir_device((fuzz_romcalls[c] >> 16) * 16) == FLASH_ROM_DEVICE;
-	int nic = d->vendor == 0x10ec && (d->device == 0x8139 || d->device == 0x8039 || d->device == 0x8169)
-		&& d->class == 0x0200 && !d->header && !d->all_functions;
-	int want = (Spec.flash == FL_VALID || Spec.flash == FL_MAX_SIZE) && nic && Spec.cls == C_FLASH;
-	if (ran_flash != want)
-		fuzz_fail("the flash's boot ROM %s for %04x:%04x", ran_flash ? "ran" : "did not run", d->vendor, d->device);
+	if (ran_flash)
+		fuzz_fail("a ROM in the flash's lower half ran for %04x:%04x", d->vendor, d->device);
 }
 
 static void run(unsigned index)

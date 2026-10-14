@@ -7,12 +7,14 @@ grep MemTotal /proc/meminfo
 cat /proc/partitions
 ls /sys/class/net
 echo LINUX-TEST-OK
-# test/flashlinux.sh: rewrite the BIOS flash with tools/flashbios and images fetched by TFTP
+# test/flashlinux.sh: rewrite the BIOS flash with flashrom (UMC patch) and tools/bios-update.sh, files by TFTP
 if grep -q flashtest /proc/cmdline; then
-  mkdir -p /tmp /dev && mount -t devtmpfs devtmpfs /dev && cd /tmp
-  for f in flashbios bad.rom a.rom b.rom b2.rom; do tftp -g -r $f 10.0.2.2 || echo "FLASHTEST: no $f"; done
-  chmod +x flashbios
-  ./flashbios -n bad.rom; echo "FLASHTEST-BAD-RC=$?"
-  ./flashbios -n b.rom && ./flashbios b.rom && ./flashbios a.rom && ./flashbios b2.rom; echo "FLASHTEST-RC=$?"
+  mkdir -p /tmp /dev && mount -t devtmpfs devtmpfs /dev && cd /tmp && export PATH=/tmp:$PATH
+  for f in flashrom bios-update bad.rom a.rom a2.rom b.rom b2.rom; do tftp -g -r $f 10.0.2.2 || echo "FLASHTEST: no $f"; done
+  chmod +x flashrom bios-update
+  flashrom -p internal -w a2.rom; echo "FLASHTEST-FULL-RC=$?"
+  bios-update bad.rom; echo "FLASHTEST-BAD-RC=$?"
+  flashrom -p internal --force -r read.rom && cat a.rom a.rom | cmp - read.rom && bios-update b.rom && bios-update a.rom \
+    && bios-update b2.rom; echo "FLASHTEST-RC=$?"
 fi
 exec sh

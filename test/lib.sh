@@ -89,7 +89,13 @@ vm_shot() {  # -> the path of a new screenshot (graphics modes: the text dump ca
   vm_cmd shot
   for _ in $(seq 100); do
     n=$(ls "$vm/screenshots" 2>/dev/null | wc -l)
-    [ "$n" -gt "$before" ] && { sleep 0.5; ls -t "$vm/screenshots"/*.png | head -1; return; }
+    if [ "$n" -gt "$before" ]; then   # newest first, no pipe (ls | head: SIGPIPE killed the test under pipefail)
+      local all
+      sleep 0.5
+      all=$(ls -t "$vm/screenshots"/*.png)
+      echo "${all%%$'\n'*}"
+      return
+    fi
     sleep 0.1
   done
   fail "no screenshot"
@@ -105,12 +111,46 @@ vm_ocr_expect() {  # extended regex the OCR text must show
 
 vm_key() { for k; do vm_cmd key "$k"; sleep 0.2; done; }   # set 1 scan codes (hex), typed one by one
 
+vm_cad() {  # [timeout] Ctrl+Alt+Del, then the reboot's POST up to its prompt (the old screen may show that text)
+  local resets end=$((SECONDS + ${1:-60}))
+  resets=$(grep -c '^RESET' "$vm/post.log")
+  vm_cmd combo 1d 38 53
+  until [ "$(grep -c '^RESET' "$vm/post.log")" -gt "$resets" ] && awk '/^RESET/ { p = 0 } /^B8$/ { p = 1 }
+      END { exit !p }' "$vm/post.log"; do
+    [ $SECONDS -lt $end ] || fail "Ctrl+Alt+Del: no reboot to the POST prompt"
+    sleep 0.2
+  done
+  vm_wait_text "Press DEL to enter SETUP" 10
+}
+
+vm_net_first() {  # in BIOS FEATURES SETUP: 1st boot device Hard Disk (default) -> CD-ROM -> Network
+  vm_key $K_DOWN $K_DOWN $K_PGDN $K_PGDN
+  vm_expect "1st Boot Device +: Network"
+}
+
 vm_kill() {  # 86Box ignores SIGTERM
   kill -KILL "$vm_pid" "$vm_serial" 2>/dev/null || true
   wait "$vm_pid" "$vm_serial" 2>/dev/null || true
 }
 
+post_once() {  # double POST probe on the POST card log: between two CPU resets no POST step starts twice, no soft
+               # reset (8042, port 92h, triple fault) cuts a POST short of its prompt (only the test resets hard), and
+               # no USB controller still bus masters at a soft reset (it wrote into the next POST's cache-as-RAM).
+               # vm_post_crash_ok=1: a test whose emulated hardware is faulty on purpose may crash a POST
+  [ -f "$vm/post.log" ] || return 0
+  awk '/^USB-DMA/ { usb = $2 == "on"; next }
+       /^RESET/ { if (busy && $2 == "soft" && !crash_ok) { print "soft reset in the POST after code " last; bad = 1 }
+                  if (usb && $2 == "soft") { print "USB bus mastering still on at a reboot after code " last; bad = 1 }
+                  split("", seen); busy = 0; next }
+       { last = $1 }
+       $1 == "01" || $1 == "B0" { busy = 1 }
+       $1 ~ /^(B[0-8]|BB)$/ && seen[$1]++ { print "POST step " $1 " started twice"; bad = 1 }
+       $1 ~ /^(B8|B9|BC)$/ { busy = 0 }
+       END { exit bad }' crash_ok="${vm_post_crash_ok:-}" "$vm/post.log" >&2 || fail "double POST, log: $(tr '\n' ' ' < "$vm/post.log")"
+}
+
 vm_stop() {
+  post_once
   vm_cmd quit
   for _ in $(seq 50); do kill -0 "$vm_pid" 2>/dev/null || break; sleep 0.1; done
   vm_kill
@@ -133,11 +173,22 @@ disk_cfg() {  # path -> 86Box config lines for that image as IDE primary master
   printf 'hdd_01_fn = %s\nhdd_01_ide_channel = 0:0\n' "$1"
 }
 
-nic_cfg() {  # boot ROM file -> 86Box config lines for an RTL8139 with that ROM in its socket, on SLiRP
+nic_cfg() {  # boot ROM file -> 86Box config lines for the board's RTL8139C (no C+ mode) with it in its socket, SLiRP
   mkdir -p "$vm_dir/roms/network/rtl8139c"
   cp "$1" "$vm_dir/roms/network/rtl8139c/rtl8139c.rom"
   printf '[Network]\nnet_01_card = rtl8139c+\nnet_01_net_type = slirp\nnet_01_link = 0\n\n'
-  printf '[Realtek RTL8139C+ #1]\nbios = 1\n'
+  printf '[Realtek RTL8139C+ #1]\nbios = 1\ncplus = 0\n'
+}
+
+etherboot=$nb/test/roms/etherboot-5.4.4-rtl8139.rom   # the operator's card ROM (first 32 KiB of its chip, not published)
+
+net_boot_dir() {  # boot.ipxe text -> $vm_dir/tftp on SLiRP: the socket ROM's Etherboot loads boot.pxe (iPXE), which
+                  # does DHCP again and runs boot.ipxe
+  [ -f "$nb/build/ipxe-chain.pxe" ] || "$nb/tools/build_ipxe.sh"
+  mkdir -p "$vm_dir/tftp"
+  cp "$nb/build/ipxe-chain.pxe" "$vm_dir/tftp/boot.pxe"
+  printf '%s' "$1" > "$vm_dir/tftp/boot.ipxe"
+  export BOX86_SLIRP_TFTP=$vm_dir/tftp BOX86_SLIRP_BOOTFILE=boot.pxe
 }
 
 vm_setup() {  # DEL at the prompt -> main menu of the setup utility
@@ -153,9 +204,9 @@ vm_end_of_post() {  # [timeout] -> the setup prompt; F1 past the POST error halt
   vm_wait_text "Press DEL to enter SETUP, ESC for boot" 10
 }
 
-vm_menu() {  # main menu entry index (0-14, column by column) -> opens it; the menu keeps its cursor
+vm_menu() {  # main menu entry index (0-15, column by column) -> opens it; the menu keeps its cursor
   local i
-  for ((i = 0; i < ($1 - menu_sel + 15) % 15; i++)); do vm_key $K_DOWN; done
+  for ((i = 0; i < ($1 - menu_sel + 16) % 16; i++)); do vm_key $K_DOWN; done
   menu_sel=$1
   vm_key $K_ENTER
 }

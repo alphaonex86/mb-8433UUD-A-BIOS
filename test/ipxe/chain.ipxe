@@ -1,3 +1,3 @@
 #!ipxe
 dhcp
-chain tftp://${next-server}/bzImage
+chain tftp://${next-server}/boot.ipxe

@@ -33,7 +33,7 @@ for _ in $(seq 14); do vm_key $K_DOWN; done       # Halt On
 vm_key $K_PGDN $K_PGDN $K_PGDN                    # All Errors -> All, But Diskette
 vm_expect "Halt On : All, But Diskette"
 vm_key $K_ESC
-vm_menu 11                                        # LOAD BIOS DEFAULTS
+vm_menu 12                                        # LOAD BIOS DEFAULTS
 vm_wait_text "Load BIOS Defaults \(Y/N\)" 5
 vm_key $K_Y
 vm_menu 1                                         # BIOS FEATURES SETUP

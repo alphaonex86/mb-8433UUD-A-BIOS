@@ -1,0 +1,59 @@
+flashrom: UMC UM8886BF/UM8886F chipset enable (486 boards with the UM8881F host bridge, e.g. Biostar MB-8433UUD-A)
+
+Flash writes enabled as the boards' Award BIOS does for its ESCD (UM8886 47h bit 6 off, 57h bits 7-6, 5 and 2 on;
+UM8881F 55h bit 6 on), restored on exit; refused when the BIOS runs from the chip (UM8881F 55h bit 7 off).
+The MB-8433UUD-A wires A17 of its (1 Mbit) BIOS socket high: max decode 128 KiB, flashrom then refuses a full
+2 Mbit write that would erase the BIOS through the alias. Against flashrom 1.7.0. Tested in the 86Box fork of mb-8433UUD-A-BIOS (W49F002A, 2 Mbit).
+
+--- a/chipset_enable.c
++++ b/chipset_enable.c
+@@ -1227,6 +1227,40 @@
+ 	return via_init_spi(pci_read_long(dev, 0xbc) << 8);
+ }
+ 
++/*
++ * UMC UM8886BF/UM8886F ISA bridge with the UM8881F host bridge (486 boards, e.g. Biostar MB-8433UUD-A): flash
++ * writes enabled as the boards' Award BIOS does for its ESCD, restored on exit:
++ *  - UM8886 47h bit 6 off (write protect) and 57h bits 5 and 2 on (writes), bits 7-6 on (decode the lower half of
++ *    a 2 Mbit chip at 0xFFFC0000);
++ *  - UM8881F 55h bit 6 on.
++ * The BIOS must run from shadow RAM (UM8881F 55h bit 7: segment F read from DRAM), not from the chip.
++ */
++static int enable_flash_umc8886(const struct programmer_cfg *cfg, struct pci_dev *dev, const char *name)
++{
++	struct pci_dev *host = pcidev_find(0x1060, 0x8881);
++
++	if (!host) {
++		msg_perr("%s: no UMC UM8881F host bridge.\n", name);
++		return ERROR_FLASHROM_FATAL;
++	}
++	if (!(pci_read_byte(host, 0x55) & 0x80)) {
++		msg_perr("%s: segment F is not read from shadow RAM: the BIOS runs from the flash chip.\n", name);
++		return ERROR_FLASHROM_FATAL;
++	}
++	rpci_write_byte(dev, 0x47, pci_read_byte(dev, 0x47) & ~0x40);
++	rpci_write_byte(dev, 0x57, pci_read_byte(dev, 0x57) | 0xe4);
++	rpci_write_byte(host, 0x55, pci_read_byte(host, 0x55) | 0x40);
++	if ((pci_read_byte(dev, 0x47) & 0x40) || (pci_read_byte(dev, 0x57) & 0xe4) != 0xe4 ||
++	    !(pci_read_byte(host, 0x55) & 0x40)) {
++		msg_perr("%s: the flash write enable bits did not stick.\n", name);
++		return ERROR_FLASHROM_FATAL;
++	}
++	/* 57h bits 7-6 decode 256 KiB, but 1 Mbit sockets (the MB-8433UUD-A's) leave A17 of a 2 Mbit chip high: its
++	   lower half is unreachable, an erase there hits the upper half. Boards that wire A17 can use --force. */
++	max_rom_decode.parallel = 128 * 1024;
++	return 0;
++}
++
+ static int enable_flash_cs5530(const struct programmer_cfg *cfg, struct pci_dev *dev, const char *name)
+ {
+ 	uint8_t reg8;
+@@ -1829,6 +1863,8 @@
+ 	{0x1039, 0x5596, B_PFL,  NT,  "SiS", "5596",				enable_flash_sis5511},
+ 	{0x1039, 0x5597, B_PFL,  NT,  "SiS", "5597/5598/5581/5120",		enable_flash_sis530},
+ 	{0x1039, 0x5600, B_PFL,  NT,  "SiS", "600",				enable_flash_sis530},
++	{0x1060, 0x886a, B_P,    NT,  "UMC", "UM8886BF",			enable_flash_umc8886},
++	{0x1060, 0x888a, B_P,    NT,  "UMC", "UM8886F",			enable_flash_umc8886},
+ 	{0x1078, 0x0100, B_P,    OK,  "AMD", "CS5530(A)",			enable_flash_cs5530},
+ 	{0x10b9, 0x1533, B_PFL,  OK,  "ALi", "M1533",				enable_flash_ali_m1533},
+ 	{0x10de, 0x0030, B_PFL,  OK,  "NVIDIA", "nForce4/MCP4",			enable_flash_nvidia_nforce2},

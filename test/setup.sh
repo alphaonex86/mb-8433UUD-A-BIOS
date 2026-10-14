@@ -36,11 +36,11 @@ vm_expect "Drive A : 2.88M, 3.5 in."
 vm_key $K_ESC
 vm_menu 1                                         # BIOS FEATURES SETUP
 vm_wait_text "Boot Up NumLock Status" 5
-vm_key $K_DOWN $K_DOWN $K_PGDN $K_PGDN $K_PGDN    # 1st boot device: Floppy -> Network (swaps)
-vm_expect "1st Boot Device +: Network"
-vm_expect "2nd Boot Device +: Floppy"
-vm_expect "3rd Boot Device +: Hard Disk"
-vm_expect "4th Boot Device +: CD-ROM"
+vm_expect "1st Boot Device +: Hard Disk"           # default: Hard Disk, USB, Network, Floppy
+vm_expect "2nd Boot Device +: USB"
+vm_expect "4th Boot Device +: Floppy"
+vm_net_first                                      # Network swapped with the 3rd: CD-ROM
+vm_expect "3rd Boot Device +: CD-ROM"
 vm_save
 
 vm_end_of_post 60
@@ -53,11 +53,16 @@ vm_expect "Drive A : 2.88M, 3.5 in."
 vm_key $K_ESC
 vm_menu 1
 vm_wait_text "1st Boot Device +: Network" 5
-vm_expect "4th Boot Device +: CD-ROM"
+vm_expect "3rd Boot Device +: CD-ROM"
 vm_key $K_ESC
 vm_info 0                                         # HARDWARE INFORMATION: a menu of the pages
 vm_wait_text "CPU +: Am5x86" 5
 vm_expect "Core clock +: 1[0-9]{2} MHz"
+vm_expect "Bus clock \(FSB\): 33.3 MHz = core / 4"     # Am5x86-133: 4 x 33
+vm_expect "PCI / ISA clock: 33.3 MHz \(host:PCI 1:1\) / 8.3 MHz \(PCICLK/4\)"
+vm_expect "L1 cache +: 16 KB, enabled, at 1[0-9]{2} MHz \(core clock\)"
+vm_expect "L2 cache +: 256 KB, write-back, enabled, 1 bank\(s\), 33 MHz, 3-1-1-1"
+vm_expect "DRAM timing +: at 33 MHz \(bus\), fast page mode, read 1 WS, write 1 WS"
 vm_key $K_ESC $K_DOWN $K_ENTER
 vm_wait_text "1060:8881 +UMC +Host bridge" 5
 vm_key $K_ESC $K_DOWN $K_ENTER

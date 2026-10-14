@@ -28,8 +28,7 @@ done
 start disk-gone
 vm_end_of_post 120
 sleep 10                                            # the disk is gone 3 s after the first READ
-vm_cmd combo 1d 38 53
-vm_wait_text "Press DEL to enter SETUP" 120 || fail "disk-gone: no POST after Ctrl+Alt+Del"
+vm_cad 120
 vm_wait_text "No bootable device|Boot failed" 180
 echo "usbfault disk-gone: POST finished without the unplugged disk"
 vm_stop

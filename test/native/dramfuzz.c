@@ -142,16 +142,22 @@ void pci_config_writeb(u16 bdf, u32 reg, u8 value)
 
 u8 rtc_read(u8 index)
 {
-	if (index != NB_CMOS_BOOTFAIL && index != NB_CMOS_L2)
+	if (index != NB_CMOS_BOOTFAIL && index != NB_CMOS_L2 && index != NB_CMOS_LASTPOST)
 		fatal("SeaBIOS CMOS read not modelled at", index);
 	return cmos[index];
 }
 
 void rtc_write(u8 index, u8 val)
 {
-	if (index != NB_CMOS_L2)
+	if (index != NB_CMOS_L2 && index != NB_CMOS_LASTPOST)
 		fatal("SeaBIOS CMOS write not modelled at", index);
 	cmos[index] = val;
+}
+
+void outb(u8 value __attribute__((unused)), u16 port)   /* the L2 steps' POST codes */
+{
+	if (port != 0x80)
+		fatal("SeaBIOS port write not modelled at", port);
 }
 
 u32 cr0_read(void)

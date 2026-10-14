@@ -1,41 +1,52 @@
 #!/bin/bash
-# tools/flashbios from Linux on the board (86Box W49F002A, 2 Mbit): booted by the flash's iPXE, Linux fetches the
-# tool and images by TFTP and rewrites the chip: a file that is not an image is refused, then the lower half erased
-# (b.rom), the image restored (a.rom), one free byte of the boot block changed (b2.rom). After a reset the new
-# BIOS runs and the chip holds b2.rom.
+# BIOS update from Linux on the board (86Box W49F002A, A17 high as in its 1 Mbit socket: only the upper half reached),
+# booted by Etherboot in the card's socket ROM, then iPXE, the tools and images by TFTP:
+#  - flashrom (UMC patch, tools/build_flashrom.sh) refuses a plain 256 KiB write: on the board one erased the BIOS
+#    through the alias (max decode 128 KiB);
+#  - tools/bios-update.sh refuses a file of the wrong size, then the chip read back as the image, and rewrites it:
+#    the 96 KiB main block changed (b.rom), the image restored (a.rom), a free byte of the boot block changed (b2.rom).
+# After a reset the new BIOS runs, the chip's upper half holds b2.rom and its unreachable lower half is untouched.
 . "$(dirname "$0")/lib.sh"
 [ -f "$nb/build/bzImage" ] || "$nb/test/linux/build.sh"
-a=${rom%.rom}-2mbit.rom
+"$nb/tools/build_flashrom.sh" > /dev/null || fail "flashrom does not build"
+net_boot_dir $'#!ipxe\nchain tftp://${next-server}/bzImage ip=dhcp console=ttyS0 flashtest\n'
 t=$vm_dir/tftp
-mkdir -p "$t"
-"$nb/sources/buildroot_486/output/host/bin/i486-buildroot-linux-gnu-gcc" -O2 -static -Wall -Werror -o "$t/flashbios" \
-  "$nb/tools/flashbios.c" || fail "flashbios does not build"
-cp "$a" "$t/a.rom"
-head -c 1000 "$a" > "$t/bad.rom"
-{ head -c 131072 /dev/zero | tr '\0' '\377'; tail -c 131072 "$a"; } > "$t/b.rom"
-cp "$a" "$t/b2.rom"
-ff=$(python3 -c "import sys; d=open(sys.argv[1],'rb').read(); print(next(i for i in range(0x3c000, 0x3fff0) if d[i:i+64] == b'\xff'*64) + 32)" "$a")
-printf '\x00' | dd of="$t/b2.rom" bs=1 seek="$ff" conv=notrunc status=none   # a free byte of the boot block
+cp "$nb/build/flashrom" "$t/flashrom"
+cp "$nb/tools/bios-update.sh" "$t/bios-update"
 cp "$nb/build/bzImage" "$t/bzImage"
-printf '#!ipxe\nchain tftp://${next-server}/bzImage ip=dhcp console=ttyS0 flashtest\n' > "$t/boot.ipxe"
-export BOX86_FLASH=w49f002a BOX86_SLIRP_TFTP=$t BOX86_SLIRP_BOOTFILE=boot.ipxe
-vm_start flashlinux "$a" "$(printf '[Network]\nnet_01_card = rtl8169\nnet_01_net_type = slirp\nnet_01_link = 0\n
-[Realtek RTL8169S #1]\nbios = 0\n')"
+cp "$rom" "$t/a.rom"
+cp "${rom%.rom}-2mbit.rom" "$t/a2.rom"
+head -c 1000 "$rom" > "$t/bad.rom"
+python3 - "$rom" "$t" <<'PY'
+import sys
+d = bytearray(open(sys.argv[1], 'rb').read())
+b = bytearray(d)
+b[0x1000:0x1400] = bytes(x ^ 0xff for x in b[0x1000:0x1400])   # in the 96 KiB main block (chip 0x21000)
+open(sys.argv[2] + '/b.rom', 'wb').write(b)
+free = next(i for i in range(0x1c000, 0x1fff0) if d[i:i + 64] == b'\xff' * 64) + 32
+d[free] = 0                                                       # a free byte of the 16 KiB boot block
+open(sys.argv[2] + '/b2.rom', 'wb').write(d)
+PY
+export BOX86_FLASH=w49f002a
+vm_start flashlinux "${rom%.rom}-2mbit.rom" "$(nic_cfg "$etherboot")"
 vm_end_of_post 60
 vm_setup
 vm_menu 1                                                  # BIOS FEATURES SETUP
 vm_wait_text "1st Boot Device" 5
-vm_key $K_DOWN $K_DOWN $K_PGDN $K_PGDN $K_PGDN             # 1st boot device: Floppy -> Network
+vm_net_first
 vm_save
 com_done() { grep -aq "$1" "$vm/serial.log"; }
 end=$((SECONDS + 300))
 until com_done "FLASHTEST-RC="; do [ $SECONDS -lt $end ] || { vm_screen; fail "Linux did not run the flash test"; }; sleep 1; done
-grep -aq "FLASHTEST-BAD-RC=1" "$vm/serial.log" || fail "a file that is not an image was not refused"
-grep -aq "FLASHTEST-RC=0" "$vm/serial.log" || { grep -a "flashbios\|block\|chip" "$vm/serial.log"; fail "flashbios failed"; }
-grep -a "^chip \|rewriting\|^done" "$vm/serial.log" | tr -d '\r' | sed 's/^/flashbios: /'
+com_done "FLASHTEST-FULL-RC=0" && fail "flashrom wrote a 256 KiB image on the 128 KiB-decoded board"
+grep -aq "This flash chip is too big for this programmer" "$vm/serial.log" || fail "flashrom did not refuse the 2 Mbit write"
+grep -aq "FLASHTEST-BAD-RC=1" "$vm/serial.log" || fail "a file of the wrong size was not refused"
+grep -aq "FLASHTEST-RC=0" "$vm/serial.log" || { grep -a "flashrom\|chip\|rror\|FAIL" "$vm/serial.log"; fail "bios-update failed"; }
+grep -a "^Found \|UMC\|VERIFIED" "$vm/serial.log" | tr -d '\r' | sort | uniq -c | sed 's/^/flashrom: /'
 vm_cmd reset
 vm_wait_text "Press DEL to enter SETUP" 60
 vm_cmd quit                                                # 86Box saves the chip when it powers off
 for _ in $(seq 50); do kill -0 "$vm_pid" 2>/dev/null || break; sleep 0.1; done
-cmp -s "$vm/nvr/84xxuuda.bin" "$t/b2.rom" || fail "the chip does not hold b2.rom"
+cmp -s <(tail -c 131072 "$vm/nvr/84xxuuda.bin") "$t/b2.rom" || fail "the chip's upper half does not hold b2.rom"
+cmp -s <(head -c 131072 "$vm/nvr/84xxuuda.bin") "$t/a.rom" || fail "the chip's unreachable lower half changed"
 vm_stop

@@ -49,8 +49,9 @@ for pid in "${pids[@]}"; do
 done
 # string.c also has its own memcpy/memset/strlen...: keep libc's (ASan checks them)
 objcopy -L memcpy -L memset -L memmove -L memcmp -L strlen -L strcmp -L strchr "$out/sb_string.o"
-# setup.c's L2 asm (CACHE TEST page): the seams' versions (seams.c), no DRAM scan on the host
+# setup.c's L2 asm (CACHE TEST, L2 SRAM TEST pages): the seams' versions (seams.c), no DRAM scan on the host
 objcopy --weaken-symbol=l2_fill --weaken-symbol=l2_fill_off --weaken-symbol=l2_line_works --weaken-symbol=l2_caches \
+  --weaken-symbol=l2s_probe --weaken-symbol=l2s_pass --weaken-symbol=l2s_tags --weaken-symbol=l2s_dirty \
   "$out/setup_seam.o"
 # SeaBIOS's snprintf and znprintf for the SeaBIOS objects only: the harness's own messages use glibc's (%.*s)
 for o in "$out"/sb_*.o "$out/setup_seam.o" "$out/output_seam.o"; do

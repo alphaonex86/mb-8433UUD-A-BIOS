@@ -8,7 +8,7 @@
 . "$(dirname "$0")/../lib.sh"
 name=$1 menu=$2 item=$3 presses=$4 auto_off=${5:-}
 vm_dir=$nb/test/vm/oracle-$name
-rom=$nb/BIOSORIGINAL.bin
+rom=${AWARD_ROM:-$nb/BIOSORIGINAL.bin}   # AWARD_ROM: another image of it (e.g. tools/award_defaults.py output)
 vm_start "oracle-$name" "$rom" "$([ -z "${DISK:-}" ] || disk_cfg "$DISK")"   # DISK=image: IDE primary master
 vm_wait_text "DEL to enter SETUP" 60
 vm_key $K_DEL

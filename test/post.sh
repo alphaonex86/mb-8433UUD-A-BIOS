@@ -4,16 +4,16 @@
 . "$(dirname "$0")/lib.sh"
 mkdir -p "$vm_dir"
 normal=$(sed -n '/^## Normal boot/,/^## Other/p' "$nb/POSTCODES.md" | grep -oE '^\| `[0-9A-F]{2}`' | grep -oE '[0-9A-F]{2}')
-codes() { tr '\n' ' ' < "$vm/post.log" | sed 's/ $//'; }
+codes() { grep -E '^[0-9A-F]{2}$' "$vm/post.log" | uniq | tr '\n' ' ' | sed 's/ $//'; }
 vm_start post "$rom"
 vm_end_of_post 60
 upto_prompt=$(echo "$normal" | sed '/^B8$/q' | tr '\n' ' ' | sed 's/ $//')
 [ "$(codes)" = "$upto_prompt" ] || fail "POST codes: $(codes) - expected: $upto_prompt"
 vm_setup
-[ "$(tail -1 "$vm/post.log")" = B9 ] || fail "no B9 in setup: $(codes)"
+[ "$(codes | sed 's/.* //')" = B9 ] || fail "no B9 in setup: $(codes)"
 vm_menu 9                                         # MEMORY TEST
 vm_wait_text "Testing  :" 10
-[ "$(tail -1 "$vm/post.log")" = BA ] || fail "no BA in the memory test: $(codes)"
+[ "$(codes | sed 's/.* //')" = BA ] || fail "no BA in the memory test: $(codes)"
 vm_key $K_ESC
 vm_wait_text "CMOS SETUP UTILITY" 10
 vm_key $K_ESC

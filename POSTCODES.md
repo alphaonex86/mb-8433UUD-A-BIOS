@@ -65,6 +65,11 @@ this order, so this table is the reference.
 | `B3` | SeaBIOS | POST screen (text mode 80x25) | |
 | `B4` | SeaBIOS | keyboard, USB, floppy and IDE drives detected | a drive that does not answer |
 | `B5` | SeaBIOS | POST memory test | (the screen shows the memory count) |
+| `C1` | SeaBIOS | L2 init: L1 off, WBINVD (the POST screen's cache line shows each step) | |
+| `C2` | SeaBIOS | L2 init: write-through fill of the scratch range | L2 SRAM, tag RAM or their timing |
+| `C3` | SeaBIOS | L2 init: tag checks | |
+| `C4` | SeaBIOS | L2 init: write-back fill | |
+| `C5` | SeaBIOS | L2 init: caches back on (also after a failed check: no `C4` then) | |
 | `B6` | SeaBIOS | ISA PnP cards configured, then option ROMs: ISA cards (C8000-DFFFF), network boot ROM | a PnP card or an option ROM |
 | `B7` | SeaBIOS | system configuration box | |
 | `B8` | SeaBIOS | POST errors (Halt On: `Press F1 to continue`), then `Press DEL to enter SETUP, ESC for boot menu` | (waits for F1/DEL, the keys or the boot delay) |
@@ -78,9 +83,13 @@ this order, so this table is the reference.
 | `02` | CPU-only reset (CMOS 0Fh not 0, e.g. a program returning from protected mode): jump to SeaBIOS, which resumes the program |
 | `B9` | setup utility (DEL) |
 | `BA` | MEMORY TEST in setup |
+| `C1`-`C7` | CACHE TEST in setup: its L2 steps (`C6` speed test, `C7` L2 off) |
 | `BD` | no bootable device: the message is on screen, retry after 60 s |
 | `E0` | coreboot: a stage or SeaBIOS was not found or not loaded (flash content) |
 | `EE` | coreboot: code that must not return did return |
+
+A POST that does not reach `BB` (hang, reset, power off) is reported by the next one: "The previous
+POST did not finish, its last POST code: XX" (CMOS 3Fh keeps the last SeaBIOS code).
 
 Other fatal coreboot errors (bad CPU self test, missing stage) halt and leave the last code shown.
 

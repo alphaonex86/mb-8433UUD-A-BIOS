@@ -1,9 +1,9 @@
 #!/bin/bash
-# Build newBIOS for the Biostar MB-8433UUD-A: coreboot_486 (UMC chipset init) + SeaBIOS (BIOS services,
-# option ROMs, CMOS setup) + iPXE (network boot of the Realtek NICs, in the lower half of a 2 Mbit flash).
-# Output: out/newbios.rom (1 Mbit flash, also used by the 86Box tests) and out/newbios-2mbit.rom (2 Mbit flash such
-# as a W49F002A: build/ipxe.rom in the lower 128 KiB, the BIOS in the upper).
-# Sources: fetch_sources.sh (pinned coreboot_486, seabios_486 and iPXE trees, in sources/).
+# Build newBIOS for the Biostar MB-8433UUD-A: coreboot_486 (UMC chipset init) + SeaBIOS (BIOS services, option ROMs,
+# CMOS setup). Network boot is Etherboot in the RTL8139's socket ROM, not in this flash.
+# Output: out/newbios.rom (1 Mbit flash, also used by the 86Box tests) and out/newbios-2mbit.rom (a 2 Mbit flash such
+# as a W49F002A: the board's 1 Mbit socket keeps A17 high, only the upper half is reached; the BIOS is in both halves).
+# Sources: fetch_sources.sh (pinned coreboot_486 and seabios_486 trees, in sources/).
 # usage: [DEBUG=1] [HALT_ON=n] build.sh    DEBUG=1 also builds out/newbios-debug.rom (logs on COM1);
 #   HALT_ON=1 builds out/newbios-halt1.rom whose Halt On default is No Errors (no keyboard, dead CMOS battery).
 # The patches in patches/ are the source of truth: a missing work tree is recreated from them, and they
@@ -17,7 +17,6 @@ mkdir -p "$out"
 
 "$nb/fetch_sources.sh" firmware
 "$nb/tools/build_toolchain.sh"
-"$nb/tools/build_ipxe.sh"
 xgcc=$cb/util/crossgcc/xgcc/bin
 
 if [ ! -d "$sb/.git" ]; then
@@ -88,9 +87,7 @@ EOF
   [ "$(awk '$1 == "escd" {print $2}' "$out/$tag.cbfs.txt")" = 0x1bfe0 ] \
     || { echo "BUILD FAILED: $tag, the ESCD data is not at flash 0x1c000" >&2; exit 1; }   # 32-byte header
   echo "$out/$tag.rom: $(awk '/empty/ {s += $4} END {print s}' "$out/$tag.cbfs.txt") bytes free"
-  local ipxe_size; ipxe_size=$(stat -c %s "$nb/build/ipxe.rom")
-  { cat "$nb/build/ipxe.rom"; head -c $((131072 - ipxe_size)) /dev/zero | tr '\0' '\377'; cat "$rom"; } \
-    > "$out/$tag-2mbit.rom"
+  cat "$rom" "$rom" > "$out/$tag-2mbit.rom"
 }
 
 halt=${HALT_ON:-0} rom=newbios
