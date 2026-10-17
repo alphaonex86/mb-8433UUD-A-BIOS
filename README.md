@@ -5,8 +5,8 @@ DOS and Linux 6.18 run as under the original, the RTL8139C socket ROM boots over
 Award-like setup utility (main menu, pages, values) configures the board, the POST shows CPU, memory
 test and drives. Developed and tested in a patched 86Box before touching the real board.
 
-Status 2026-10-14: all emulator tests pass (`test/run_all.sh`); runs on the real board (DOS, Linux from IDE and
-USB, network boot). Published: `out/release/newbios-mb-8433UUD-A.zip` (`release.sh`: BIOS.bin, POSTCODES.txt and `dist/README.txt`). POST codes
+Status 2026-10-16: all emulator tests pass (`test/run_all.sh`); runs on the real board (DOS, Linux from IDE and
+USB, network boot); the BOARD TEST and HDD SURFACE SCAN pages are tested in 86Box only so far. Published: `out/release/newbios-mb-8433UUD-A.zip` (`release.sh`: BIOS.bin, POSTCODES.txt and `dist/README.txt`). POST codes
 for a POST card: [POSTCODES.md](POSTCODES.md); everything that is not C: [ASM.md](ASM.md).
 
 ## Screenshots (86Box)
@@ -19,7 +19,8 @@ for a POST card: [POSTCODES.md](POSTCODES.md); everything that is not C: [ASM.md
 | ![IDE drives](screenshot/IDE-DRIVES.png) | ![Chipset registers](screenshot/CHIPSET-REGISTERS.png) |
 | ![Memory speed](screenshot/MEMORY-SPEED.png) | ![Memory test](screenshot/MEMTEST.png) |
 | ![CPU benchmark](screenshot/CPU-BENCHMARK.png) | ![Hard disk benchmark](screenshot/HARD-DISK-BENCHMARK.png) |
-| ![Hard disk speed](screenshot/HARD-DISK-SPEED.png) | |
+| ![Hard disk speed](screenshot/HARD-DISK-SPEED.png) | ![Board test](screenshot/BOARD-TEST.png) |
+| ![HDD surface scan](screenshot/SURFACE-SCAN.png) | ![Hardware tests menu](screenshot/HARDWARE-TESTS.png) |
 
 ## Does it fit in the 128 KiB flash? Yes
 
@@ -27,23 +28,31 @@ for a POST card: [POSTCODES.md](POSTCODES.md); everything that is not C: [ASM.md
 
 | Part | Size | Content |
 |---|---|---|
-| bootblock | 3,456 | reset vector, cache-as-RAM, CBFS lookup |
-| romstage | 7,956 | UMC DRAM sizing, L2 cache, PCI quiesce, chipset setup values (XIP) |
-| postcar | 8,800 | leaves cache-as-RAM, loads ramstage |
-| ramstage | 27,563 | PCI enumeration/resources, IRQ routing, Auto chipset timings, coreboot tables (LZMA) |
-| payload | 67,552 | SeaBIOS (USB 1/2 included) + setup utility + POST screen + memory test + benchmarks + L2 diagnostics + ISA PnP and PnP BIOS (LZMA) |
+| bootblock | 3,264 | reset vector, cache-as-RAM, CBFS lookup |
+| romstage | 7,572 | UMC DRAM sizing, L2 cache, PCI quiesce, chipset setup values (XIP) |
+| postcar | 8,416 | leaves cache-as-RAM, loads ramstage; in the flash above the ESCD |
+| ramstage | 25,767 | PCI enumeration/resources, IRQ routing, Auto chipset timings, coreboot tables (LZMA) |
+| payload | 75,486 | SeaBIOS (USB 1/2 included) + setup utility + POST screen + memory test + benchmarks + L2 diagnostics + board test + surface scan + ISA PnP and PnP BIOS (LZMA) |
 | escd | 4,096 | PnP ESCD in the flash parameter block at 0x1C000 |
-| other | 569 | CBFS header, file headers and alignment |
-| **free** | **11,080** | |
+| other | 575 | CBFS header, file headers and alignment |
+| **free** | **5,896** | 5,476 below the ESCD (where the payload grows), 420 above it |
 
 One compression method, LZMA: SeaBIOS 38,992 vs 41,486 bytes with zstd, ramstage 36,109 vs 38,587, and the
 zstd decoder alone is 31,839 bytes against 7,706 for LZMA. Bootblock and romstage run in place from the
 flash and postcar stays uncompressed: the LZMA decoder would cost more in romstage than it saves. The
 decoder in postcar and ramstage is compiled for size (`-Os` instead of coreboot's `-Ofast`: 5 KB less,
-no measurable boot time difference in 86Box).
-The flash ROM has no coreboot text console (about 24 KB of `printk` code and messages; the serial port
-stays silent like under Award); it sends POST codes instead, and `DEBUG=1` builds a ROM with the full
-logs.
+no measurable boot time difference in 86Box). LZMA with 3 literal context bits (`lc=3`, cbfstool's was 1): 575 bytes
+less on the payload and ramstage; it is the most coreboot's decoder takes (its 15,980-byte probability table), its
+decoding speed on the board is not measured. coreboot is compiled with a 4-byte stack alignment
+(`-mpreferred-stack-boundary=2`; the 16-byte default only costs code on a 486: 384 bytes less on postcar, about 1 KB
+on the other stages), which lets postcar fit in the 8,768 bytes between the ESCD and the bootblock and leaves the
+space below the ESCD to the payload; its PCI Express, CardBus and PCI-X support is left out (no such bridge on a 486
+PCI bus: 1.2 KB). The flash ROM has no coreboot text console (its console code alone is 7 KB, 13 KB with its
+messages; the serial port stays silent like under Award); it sends POST codes instead. `DEBUG=1` builds
+`out/newbios-debug.rom` with SeaBIOS's level 1 log on COM1 at its key places (versions, memory relocation, the UM8881F
+DRAM/L2/shadow values coreboot set, CMOS state, PCI devices, option ROMs, drives, keyboard, USB, boot, warnings by
+caller address and source line: `out-debug/rom.o`'s symbols name the function); coreboot's log does not fit, its
+POST codes time its steps.
 
 ## Why coreboot + SeaBIOS (and not Open Firmware)
 
@@ -82,10 +91,13 @@ F7 defaults, F10 save & reboot (Y/N), Esc in the main menu quits without saving.
 | POWER MANAGEMENT SETUP | APM BIOS, HDD standby timer | SeaBIOS |
 | PNP/PCI CONFIGURATION | PCI INTA#-INTD# IRQ (Auto or 3-15), IDE PIO mode per drive (Auto, 0-4), IDE 32-bit transfer, PnP BIOS Auto-Config (ISA PnP cards get free I/O, IRQ and DMA at POST; off: left inactive for the OS) | coreboot (PIRQ), SeaBIOS (UM8886BF timings, SET FEATURES) |
 | INTEGRATED PERIPHERALS | onboard IDE primary/secondary, FDC, serial 1/2 (COM1-4 or off), parallel (378/278 or off) and mode (SPP/EPP/ECP) | SeaBIOS (UM8886BF, UM8663BF) |
-| HARDWARE INFORMATION | CPU (CPUID vendor/family/model/stepping/features, Socket 3 names incl. Cyrix DIR0), clock, L1/L2, DRAM, chipset revisions; PCI devices with vendor, class, INT pin and IRQ; ports, ISA option ROMs and IRQ 0-15 map; IDE drives (model, size, CHS, translation, PIO used/maximum); chipset register dump (UM8881F, UM8886BF, IDE, UM8663BF); benchmarks in VGA mode 12h (SpeedSys style): memory read, write and move speed over 37 block sizes 4K-2M (L1, L2 and DRAM show as steps on the real board, flat in 86Box, which has no cache timing); CPU integer (MIPS) and FPU (MFLOPS) bars against Intel/AMD 486-class CPUs (same clocks per instruction: their speed is this CPU's per MHz times their clock), with the system data; hard disk benchmark of any IDE or USB disk (maximal, random and track-to-track seek, buffered read, linear read and access time across the disk; ESC stops it, a read over 2 s ends it); hard disk speed bars against the ATA PIO mode limits | read-only |
-| MEMORY TEST | endless passes (pass counter, pass and test progress bars) of the default pass of memtest86+ 4.20 (tests 0-8: address walking ones and own address, moving inversions ones & zeros, 8-bit, random and 32-bit patterns, block move, random number sequence, modulo 20), reimplemented on the RAM above 1 MiB that POST does not use; CPU, L2, memory size and the POST read speeds in the header; pass count, time, errors with address, expected/read value, bits and count; ESC back | setup |
+| HARDWARE INFORMATION | CPU (CPUID vendor/family/model/stepping/features, Socket 3 names incl. Cyrix DIR0), clock, L1/L2, DRAM, each SIMM socket (size and sides as the chipset uses it: a SIMM present but "not used" was left out), chipset revisions; PCI devices with vendor, class, INT pin and IRQ; ports, ISA option ROMs and IRQ 0-15 map; IDE drives (model, size, CHS, translation, PIO used/maximum); the CHIPSET FEATURES options as the chip has them (with Auto Configuration, or after unfinished POSTs, those are coreboot's values, not the page's), which 16K blocks of C8000-DFFFF are shadow RAM or ISA, and the register dump (UM8881F, UM8886BF, IDE, UM8663BF) | read-only |
+| BENCHMARKS | in VGA mode 12h (SpeedSys style): memory read, write and move speed over 37 block sizes 4K-2M (L1, L2 and DRAM show as steps on the real board, flat in 86Box, which has no cache timing); CPU integer (MIPS) and FPU (MFLOPS) bars against Intel/AMD 486-class CPUs (same clocks per instruction: their speed is this CPU's per MHz times their clock), with the system data; hard disk benchmark of any IDE or USB disk (maximal, random and track-to-track seek, buffered read, linear read and access time across the disk; ESC stops it, a read over 2 s ends it); hard disk speed bars against the ATA PIO mode limits | read-only |
+| HARDWARE TESTS: MEMORY TEST | endless passes (pass counter, pass and test progress bars) of the default pass of memtest86+ 4.20 (tests 0-8: address walking ones and own address, moving inversions ones & zeros, 8-bit, random and 32-bit patterns, block move, random number sequence, modulo 20), reimplemented on the RAM above 1 MiB that POST does not use; CPU, L2, memory size and the POST read speeds in the header; pass count, time, errors with address, expected/read value, bits and count; F: bit fade passes instead (all zeros, then all ones, each left alone 5 minutes, only refreshed: weak cells, too slow a refresh); ESC back | setup |
+| HARDWARE TESTS: BOARD TEST | each IRQ line raised by its device on the board, seen in the PIC's request register with the IRQs masked (0 timer ticks; 1 keyboard controller; 3/4 UART transmitter interrupt; 6 floppy controller reset; 8 RTC periodic interrupt, and the cascade to IRQ 2; 13 FERR# of an FPU divide by zero; 14/15 CHECK POWER MODE on each IDE channel) and the PIC masks; PIT channel 1 (refresh requests, port 61h bit 4) and 2 (10 ms one-shot); the RTC crystal against the 14.318 MHz clock (ppm, s/day); 8237 address, count and page registers; drive A read twice by DMA (F); each IDE drive's cable by WRITE/READ BUFFER with 16- and 32-bit I/O (wrong DD lines named); PCI error bits (parity, SERR#, aborts) set during the test; UART scratch registers, CMOS RAM 0E-7F (not the shutdown code 0F and century 32); ISA cards in C8000-DFFFF: ROM checksums, RAM written and read; with I, the ISA I/O ports 100h-3FFh that answer (the board's own not read; a card may hang the bus on a read); the whole video memory, as large as the VESA BIOS reports, through a linear frame buffer that is a PCI card's BAR or a 64K window (the largest 256-color mode's: how far the window reaches is told), else the 4 VGA planes (256K): tagged for aliases, then written and read; keyboard controller line test. POST codes C8h-CFh: the step running | setup |
+| HARDWARE TESTS: HDD SURFACE SCAN | READ VERIFY of every sector of an IDE hard disk, 256 at a time (nothing transferred; CHS, LBA28 or LBA48 addressing): progress, sector, time, KB/s, the bad sectors (the first 8 listed with the error: uncorrectable, not found, ...), the scan goes on after each; ESC stops it. POST code BEh | setup |
 | LOAD BIOS DEFAULTS, LOAD SETUP DEFAULTS (also F6/F7 on the pages) | the original BIOS's fail-safe and Setup values, except Standard CMOS | |
-| SUPERVISOR PASSWORD, IDE HDD AUTO DETECTION, SAVE & EXIT, EXIT WITHOUT SAVING | as in Award | |
+| SUPERVISOR PASSWORD, SAVE & EXIT, EXIT WITHOUT SAVING | as in Award (its IDE HDD AUTO DETECTION: the IDE DRIVES page of HARDWARE INFORMATION) | |
 
 The chipset and super I/O register fields are the ones the original BIOS writes for the same values:
 `test/oracle/` changes each item of the original setup in 86Box, saves, reboots and dumps the PCI config
@@ -137,6 +149,8 @@ mapping. PnP BIOS runtime functions 00h-0Bh and 40h-43h with the ESCD in the fla
 | Auto chipset timings per bus clock | yes | same table; the core clock is measured with a 16-byte aligned loop (unaligned: 107-121 MHz on a 133), an Am5x86 is 4x only when that alone gives a standard bus clock (the original assumes 4x: 3 x 40 MHz got the 33 MHz timings) | `busclock` (6 CPUs) |
 | ISA PnP cards configured at POST, PnP BIOS, ESCD | yes | yes | `isapnp`, `pnpbios` |
 | POST codes on port 80h | yes (Award codes) | own codes, [POSTCODES.md](POSTCODES.md) | `post` |
+| Board test: IRQ lines, timers, RTC crystal, DMA, IDE cable, video memory, PCI/ISA buses, CMOS RAM, keyboard controller; IDE surface scan | no | yes (setup) | `boardtest`, `vgamem` |
+| CGA, MDA, Hercules and other cards without a video BIOS; ET2000, OTI-037C | yes | no (SeaBIOS has no CGA/MDA INT 10h; those two video BIOSes leave the screen blank under it) | `vgamem` (skipped) |
 
 Conventional memory is 636 KiB instead of 639/640 KiB, chosen by the operator: the UMC shadow
 write-protect is global, so SeaBIOS keeps its runtime data below 640 KiB to let C0000-FFFFF be
@@ -150,15 +164,15 @@ Hardware: 84xxuuda, Am5x86-133, one 32 MB SIMM and 256 KB L2
 (`[UMC HB4(8881F)]` in `vm/86box.cfg`), TGUI9440, FreeDOS disk
 on IDE, the operator's RTL8139C (no C+) with Etherboot in its socket ROM if `test/roms/etherboot-5.4.4-rtl8139.rom`
 is there (SLiRP DHCP/TFTP): set "1st Boot Device = Network" in setup, ESC at the prompt picks the card. POST card on (codes in the status bar). Drive A 3.5" 1.44M, no drive B;
-floppy and hard disk sounds (samples of the 86Box ROM set). The benchmarks are the last pages of
-HARDWARE INFORMATION. `BIOSORIGINAL.bin` (a dump of your board's chip) as argument boots
+floppy and hard disk sounds (samples of the 86Box ROM set). The benchmarks are in the
+BENCHMARKS menu. `BIOSORIGINAL.bin` (a dump of your board's chip) as argument boots
 the original BIOS.
 
 ## Build
 
 - `./release.sh` → `out/release/`: the ROMs, only when every test passed; flash only from there.
 - `./build.sh` → `out/newbios.rom` (1 Mbit flash, and 86Box) and `out/newbios-2mbit.rom` (2 Mbit flash, e.g. a W49F002A: the board's 1 Mbit socket keeps its A17 high, only the upper 128 KiB is reached; the BIOS is in both halves). The 86Box fork emulates the board's Intel 28F001BX-T flash (`BOX86_FLASH=w29c010` for the old Winbond), with WE# gated by UM8886 IBC47 bit 6 and `BOX86_FLASH_VPP=5` for JP13 at 5 V. `HALT_ON=1` builds `out/newbios-halt1.rom`, whose Halt On default is No Errors: POST errors (e.g. a dead CMOS battery, no keyboard) print a WARNING and the boot continues. The SeaBIOS payload is x86 BCJ filtered before LZMA (`tools/bcj_x86.py`, undone by coreboot's loader). `DEBUG=1` adds
-  `out/newbios-debug.rom` (romstage/ramstage logs at coreboot level 7 and SeaBIOS level 1 on COM1).
+  `out/newbios-debug.rom` (SeaBIOS level 1 log on COM1; no coreboot log: it does not fit).
 - Network boot tests: `tools/build_ipxe.sh` builds the PXE program Etherboot loads, iPXE's realtek driver with the
   10ec:8039 clone added (`patches/ipxe.patch`, config `configs/ipxe`), as `build/ipxe-chain.pxe`; it runs the
   test's `boot.ipxe` from the TFTP server.
@@ -210,6 +224,8 @@ out) and COM1:
 | `cachetest` | the verdict of `tools/cachetest.c` on synthetic speed curves |
 | `kbdpower` | cold boot with a slow 8042 and keyboard (86Box `BOX86_KBC_POWERON_MS`/`BOX86_KBD_POWERON_MS`, up to 1 s and 2.5 s): keyboard found and working; a 15 s silent keyboard gives the keyboard error, then types once awake |
 | `flashtime` | 86Box counts of instructions fetched and bytes read from the flash (8-bit ISA on the board, ~1 us a byte): POST under 1 s of flash time, nothing from the flash after it |
+| `boardtest` | setup BOARD TEST on the emulated board (IDE disk and CD-ROM, floppy, WD8013 RAM, an ISA ROM, TGUI9440 2 MB): every test OK, again with the floppy DMA read, the I/O scan finds the WD8013's ports, then DOS boots and the CMOS is intact; with 86Box faults (`BOX86_IRQ_FAULT` on IRQ 4 and 8, `BOX86_IDE_DATA_FAULT` on DD3, `BOX86_REFRESH_DEAD`, `BOX86_VRAM_FAULT`, a ROM with a bad checksum) each one is named; MEMORY TEST's bit fade finds the fork's stuck bit with the all-ones pattern only (the RTC advanced past its waits); HDD SURFACE SCAN lists the fork's bad sectors (`BOX86_IDE_BAD_LBA`, the last one included), stops on ESC, and DOS still boots |
+| `vgamem` | BOARD TEST's video memory test on every video card 86Box offers for this board (`BOX86_LIST_VIDEO`), default memory sizes (`vgamem.sh all`: every size, 207 runs): no error, no alias, the size the card's VESA BIOS reports (a linear frame buffer on 32, a window on 85, the VGA planes on 66, 20 not a VGA, in the full run) |
 | `cachepage` | setup CACHE TEST: the 16 L2 settings run and work on the emulated L2, the POST's write-back L2 is on again afterwards |
 | `l2sram` | setup L2 SRAM TEST on 64K-1M, 1 or 2 bank L2s (all found, all OK), then 86Box faults injected (`BOX86_L2_FAULT=bank:lane:mask`, `BOX86_L2_TAG_FAULT=mask`): a chip with a stuck bit, a dead chip, a tag bit, the dirty bit, two faults at once: each named; a POST that stopped with the L2 on leaves it off at the next |
 | `otherflash` | a JEDEC flash chip newBIOS does not know (86Box `BOX86_FLASH=sst39sf010`, as a W49F002A or SST39SF010A): POST, save and reboot, reset; the flash is not written |
@@ -232,14 +248,14 @@ dump of the board's original BIOS, not included); `award_findings.md` is what re
 what the original BIOS and newBIOS find on one SIMM/L2 configuration, as a `test/ram.sh` line.
 
 86Box fork (`build_86box.sh`, `patches/86box.patch` on 86Box 6.0): test control FIFO
-(`$BOX86_TESTCTL`: `key`, `text`, `pci`, `in`, `out`, `cr0`, `shot` (PNG screenshot), `reset`, `quit`); POST card
+(`$BOX86_TESTCTL`: `key`, `text`, `pci`, `in`, `out`, `cr0`, `shot` (PNG screenshot), `rtcadd` (RTC forward), `reset`, `quit`); POST card
 log (`$BOX86_POSTLOG`); RTL8139 boot ROM socket
 (`roms/network/rtl8139c/rtl8139c.rom`) and MMIO BAR mapped whatever the order of BAR/command writes; PCI
 RTL8169S gigabit NIC `rtl8169` with its own boot ROM socket (`roms/network/rtl8169/rtl8169.rom`), a variant
 of the RTL8139C+ code (same descriptor rings; chip XID 008, TxPoll 38h, RxMaxSize, PHYAR to a PHY with the
 RTL8211 ID, always linked at 1 Gbps full duplex; no jumbo frames, TBI, high-priority queue, Wake-on-LAN); SLiRP
 TFTP (`$BOX86_SLIRP_TFTP`, `$BOX86_SLIRP_BOOTFILE`); 386+ CPU-only reset fetches from the ROM (CS base
-FFFF0000); UM8886BF multi-function bit; IDE LBA48 (with READ/WRITE MULTIPLE EXT). UM8881 DRAM/L2 model (`chipset/umc_hb4.c`, device
+FFFF0000); UM8886BF multi-function bit; IDE LBA48 (with READ/WRITE MULTIPLE EXT), READ/WRITE BUFFER, VERIFY beyond the last sector refused; the floppy controller lowers IRQ 6 at SENSE INTERRUPT STATUS, as the 8272; the GD5420's bank register reaches its 1 MB (8 bits); the Bochs SVGA's linear frame buffer placed when memory decode comes on after its BAR was written; faults for the BOARD TEST: IRQ lines that never reach the PIC (`BOX86_IRQ_FAULT=<hex mask>`), IDE data lines read as 0 (`BOX86_IDE_DATA_FAULT=<hex mask>`), no refresh request (`BOX86_REFRESH_DEAD=1`), a video memory bit stuck at 0 (`BOX86_VRAM_FAULT=<offset>:<mask>`), sectors VERIFY cannot read (`BOX86_IDE_BAD_LBA=<lba>,...`); `BOX86_LIST_VIDEO=<file>` lists the machine's video cards and memory sizes. UM8881 DRAM/L2 model (`chipset/umc_hb4.c`, device
 options `bank0`-`bank3` SIMM type, `l2_cache` KB, `l2_banks`, `stuck_addr`/`stuck_bit` faulty RAM bit
 read as 0; all banks empty keeps the stock flat RAM):
 CPU addresses decoded to SIMM cells as registers 52h/53h/61h program them, MA mapping from the UM8881F
@@ -291,7 +307,8 @@ the original); PCI interrupts on IRQ 9-11 (15 is the secondary IDE); postcar rea
   BIOS but is built from the chipset documentation), UMC shadow bits used for ISA ROMs, port 92h reset,
   IDE timings, PCI IRQ routing, manual chipset values (keep Auto configuration first).
 - `out/newbios.rom` sends POST codes ([POSTCODES.md](POSTCODES.md)) to a POST card and as `XX` lines on COM1;
-  `DEBUG=1` builds `out/newbios-debug.rom`, which also logs romstage, ramstage and SeaBIOS on COM1 (115200 8N1).
+  `DEBUG=1` builds `out/newbios-debug.rom`, which also logs SeaBIOS's key places on COM1 (115200 8N1), with the
+  chipset values coreboot set (coreboot's own log does not fit in the flash).
 
 ## License
 
@@ -301,9 +318,9 @@ modify, and keep the licenses of, the projects they apply to: coreboot (GPL-2.0)
 
 ## Testing on the board without reflashing
 
-**CACHE TEST** in the setup main menu: the L2 init with each write policy, timing (50h bits 5-4) and tag width, and the read speed inside the L2 against DRAM for those that work. The line of a setting is on screen before it runs: if it hangs, reset (the next POST leaves the L2 off once).
+**CACHE TEST** in the setup menu HARDWARE TESTS: the L2 init with each write policy, timing (50h bits 5-4) and tag width, and the read speed inside the L2 against DRAM for those that work. The line of a setting is on screen before it runs: if it hangs, reset (the next POST leaves the L2 off once).
 
-**L2 SRAM TEST** in the setup main menu: the L2 chips tested in place at full speed, on any L2 the UM8881 takes
+**L2 SRAM TEST** in the setup menu HARDWARE TESTS: the L2 chips tested in place at full speed, on any L2 the UM8881 takes
 (64K-1M, 1 or 2 banks, found by aliasing byte lane by byte lane). Data chips through the chipset's forced hit mode
 (5Ah bit 6): a table bank x data bits (D0-D7 ... D24-D31) says which chip is OK, BAD (the failing bits) or DEAD
 (missing); to locate a chip on the board, remove one and test again. Tag RAM (the 9th chip): lines filled with

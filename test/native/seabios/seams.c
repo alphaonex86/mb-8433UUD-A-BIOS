@@ -363,9 +363,9 @@ void l2s_pass(void) { }
 void l2s_tags(void) { }
 void l2s_dirty(void) { }
 
-void __warn_timeout(int lineno, const char *fname) { fuzz_note("timeout %s:%d", fname, lineno); }
-void __warn_noalloc(int lineno, const char *fname) { fuzz_note("out of memory %s:%d", fname, lineno); }
-void __warn_internalerror(int lineno, const char *fname) { fuzz_note("internal error %s:%d", fname, lineno); }
+void __warn_timeout(int lineno) { fuzz_note("timeout at line %d", lineno); }
+void __warn_noalloc(int lineno) { fuzz_note("out of memory at line %d", lineno); }
+void __warn_internalerror(int lineno) { fuzz_note("internal error at line %d", lineno); }
 void reset(void)
 {
 	if (fuzz_keys_done)
@@ -379,15 +379,16 @@ void reset(void)
 
 void irq_trampoline_0x10(void) { }
 void irq_trampoline_0x1c(void) { }
+void irq_trampoline_0x13(void) { }
 void irq_trampoline_0x4a(void) { }
 void entry_08(void) { }
 void entry_70(void) { }
 void ps2_check_event(void) { }
 void sercon_check_event(void) { }
-void __set_invalid(struct bregs *regs, int lineno, const char *fname) { }
-void __set_unimplemented(struct bregs *regs, int lineno, const char *fname) { }
-void __set_code_invalid(struct bregs *regs, u32 linecode, const char *fname) { }
-void __set_code_unimplemented(struct bregs *regs, u32 linecode, const char *fname) { }
+void __set_invalid(struct bregs *regs, int lineno) { }
+void __set_unimplemented(struct bregs *regs, int lineno) { }
+void __set_code_invalid(struct bregs *regs, u32 linecode) { }
+void __set_code_unimplemented(struct bregs *regs, u32 linecode) { }
 void entry_0e(void) { }
 void entry_76(void) { }
 void entry_19_official(void) { }
@@ -429,11 +430,11 @@ void boot_add_cd(struct drive_s *drive, const char *desc, int prio) { boot_add('
 void boot_add_floppy(struct drive_s *drive, const char *desc, int prio) { boot_add('F', drive, 0, 0); }
 void boot_add_bcv(u16 seg, u16 ip, u16 desc, int prio) { boot_add('V', NULL, seg, ip); }
 void boot_add_bev(u16 seg, u16 bev, u16 desc, int prio) { boot_add('E', NULL, seg, bev); }
-int boot_hd_list(struct drive_s **drive, const char **desc, int max)
+int boot_drive_list(int type, struct drive_s **drive, const char **desc, int max)
 {
 	int n = 0;
 	for (int b = 0; b < fuzz_nboots && n < max; b++)
-		if (fuzz_boots[b].kind == 'H') {
+		if (fuzz_boots[b].kind == (type == 0x02 ? 'H' : type == 0x01 ? 'F' : 0)) {
 			drive[n] = fuzz_boots[b].drive;
 			desc[n++] = NULL;
 		}
@@ -469,6 +470,8 @@ int PS2KeyboardOK = 1;
 void ps2_kbd_failure(char *buf, int size) { snprintf(buf, size, " (%s, got %02x)", "8042 keyboard line test", 0xff); }
 u8 ApmEnabled;
 int ps2_kbd_command(int command, u8 *param) { return -1; }
+void ps2_irq_step(int step) { }
+int ps2_kbd_line_test(void) { return -1; }
 /* Keys: the case's script (scan << 8 | ascii), then the user walks away (fuzz_keys_done); without a
    script, F1 at once (the POST error prompt). */
 const u16 *fuzz_keys;

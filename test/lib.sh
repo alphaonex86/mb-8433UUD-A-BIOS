@@ -15,7 +15,9 @@ ram_cfg() {  # SIMM types of banks 0-3 (0 empty, see umc_hb4.c), L2 KB, L2 banks
 }
 
 vm_start() {  # name, rom, extra config lines; RAM: $vm_ram (default 32 MB in bank 0, 256 KB L2),
-              # CPU: $vm_cpu_family/speed/multi (default Am5x86-133), $vm_dynarec (0: interpreter)
+              # CPU: $vm_cpu_family/speed/multi (default Am5x86-133), $vm_dynarec (0: interpreter);
+              # $vm_other: lines of [Other peripherals] (86Box reads only the first section of a name);
+              # $vm_gfx: the video card (default tgui9440_pci)
   vm_name=$1
   vm=$vm_dir
   rm -rf "$vm/nvr" "$vm/post.log"   # fresh CMOS and flash, POST codes of this boot only
@@ -36,7 +38,7 @@ time_sync = disabled
 ${vm_ram:-$(ram_cfg 5 0 0 0 256 1)}
 
 [Video]
-gfxcard = tgui9440_pci
+gfxcard = ${vm_gfx:-tgui9440_pci}
 
 [Input devices]
 keyboard_type = keyboard_at
@@ -47,6 +49,7 @@ serial1_device = pipe
 
 [Other peripherals]
 postcard_enabled = 1
+${vm_other:-}
 
 [Named Pipe (COM) #1]
 path = $vm/com1
@@ -219,21 +222,30 @@ vm_end_of_post() {  # [timeout] -> the setup prompt; F1 past the POST error halt
   vm_wait_text "Press DEL to enter SETUP, ESC for boot" 10
 }
 
-vm_menu() {  # main menu entry index (0-15, column by column) -> opens it; the menu keeps its cursor
+vm_menu() {  # main menu entry index (0-13, column by column) -> opens it; the menu keeps its cursor
   local i
-  for ((i = 0; i < ($1 - menu_sel + 16) % 16; i++)); do vm_key $K_DOWN; done
+  for ((i = 0; i < ($1 - menu_sel + 14) % 14; i++)); do vm_key $K_DOWN; done
   menu_sel=$1
   vm_key $K_ENTER
 }
 
-vm_info() {  # page index (0 CPU, 1 PCI, 2 USB, 3 ISA, 4 IDE, 5 chipset, 6 memory speed, 7 CPU benchmark,
-             # 8 disk benchmark, 9 disk speed) -> opens it from the main menu;
-             # ESC goes back to the HARDWARE INFORMATION menu, ESC again to the main menu
+vm_tool() {  # main menu entry, item index -> opens the item:
+             # 7 HARDWARE INFORMATION: 0 CPU, 1 PCI, 2 USB, 3 ISA, 4 IDE, 5 chipset
+             # 8 BENCHMARKS: 0 memory speed, 1 CPU, 2 disk benchmark, 3 disk speed
+             # 9 HARDWARE TESTS: 0 board, 1 memory, 2 cache, 3 L2 SRAM, 4 surface scan
+             # ESC goes back to that menu (opened on its first item), ESC again to the main menu
   local i
-  vm_menu 6
-  vm_wait_text "HARD DISK SPEED" 5
-  for ((i = 0; i < $1; i++)); do vm_key $K_DOWN; done
+  vm_menu "$1"
+  vm_wait_text "Enter : Open" 5
+  for ((i = 0; i < $2; i++)); do vm_key $K_DOWN; done
   vm_key $K_ENTER
+}
+
+vm_tool_end() {  # in an item opened by vm_tool -> ESC back to its menu, ESC again to the main menu
+  vm_key $K_ESC
+  vm_wait_text "Enter : Open" 30
+  vm_key $K_ESC
+  vm_wait_text "CMOS SETUP UTILITY" 10
 }
 
 vm_save() {  # F10 + Y: save the setup and reboot

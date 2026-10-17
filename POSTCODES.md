@@ -89,6 +89,8 @@ this order, so this table is the reference.
 | `B9` | setup utility (DEL) |
 | `BA` | MEMORY TEST in setup |
 | `C1`-`C7` | CACHE TEST in setup: its L2 steps (`C6` speed test, `C7` L2 off) |
+| `C8`-`CF` | BOARD TEST in setup, the step running (a hang there names it): `CC` video memory (first: it changes the video mode), `C8` IRQ lines, `C9` PIT and RTC, `CA` DMA (and the floppy read), `CB` IDE cable, `CD` UART and CMOS RAM, `CE` ISA ROM and RAM, ISA I/O scan, `CF` keyboard controller |
+| `BE` | HDD SURFACE SCAN in setup |
 | `D1` / `D2` | an EHCI (USB 2.0) controller starts / ends checking its ports |
 | `D3` / `D4` | a UHCI (USB 1.1) controller starts / ends checking its ports |
 | `D5` | a USB device configured (keyboard, disk, hub...) |

@@ -21,10 +21,10 @@ hdd_01_ide_channel = 0:0"
 vm_end_of_post 60
 vm_expect "Pri. Master Disk : 9[0-9]{2}GB"
 vm_setup
-vm_menu 8                                          # IDE HDD AUTO DETECTION
+vm_tool 7 4                                        # HARDWARE INFORMATION: IDE DRIVES
 vm_wait_text "Primary Master +: 86B_HD" 5
 vm_expect "953867MB, CHS 16383/16/63, LBA, PIO mode"
-vm_key $K_ESC $K_ESC
+vm_key $K_ESC $K_ESC $K_ESC
 vm_wait_text "Quit Without Saving" 5
 vm_key $K_Y
 vm_wait_text "LBA48-OK|LBA48-FAIL" 30

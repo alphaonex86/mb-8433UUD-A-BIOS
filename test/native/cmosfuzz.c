@@ -222,19 +222,19 @@ static void apply_case(const struct cmos_case *c)
 
 static int field_failures(const u8 *hb0, const u8 *isa0)
 {
-	const struct field *tables[] = { chipset, caching };
+	const struct nb_field *tables[] = { chipset, caching };
 	const unsigned counts[] = { ARRAY_SIZE(chipset), ARRAY_SIZE(caching) };
 	u8 allowed_hb[256] = { 0 }, allowed_isa[256] = { 0 };
 	int fails = 0;
 
 	for (int t = 0; t < 2; t++)
 		for (unsigned i = 0; i < counts[t]; i++) {
-			const struct field *f = &tables[t][i];
-			struct domain d = { f->dev, f->reg, f->mask, f->count, { 0 } };
+			const struct nb_field *f = &tables[t][i];
+			struct domain d = { f->ibc ? ISA_BRIDGE : HOST_BRIDGE, f->reg, f->mask, f->count, { 0 } };
 			memcpy(d.value, f->value, sizeof(d.value));
-			(f->dev == HOST_BRIDGE ? allowed_hb : allowed_isa)[f->reg] |= f->mask;
-			const u8 *now = f->dev == HOST_BRIDGE ? mc->hb : mc->isa;
-			const u8 *before = f->dev == HOST_BRIDGE ? hb0 : isa0;
+			(f->ibc ? allowed_isa : allowed_hb)[f->reg] |= f->mask;
+			const u8 *now = f->ibc ? mc->isa : mc->hb;
+			const u8 *before = f->ibc ? isa0 : hb0;
 			if (!in_domain(&d, now[f->reg], before[f->reg]))
 				fails |= FIELD_VALUE;
 		}

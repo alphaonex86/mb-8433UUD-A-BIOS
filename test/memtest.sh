@@ -20,7 +20,7 @@ vm_start "memtest $1" "$rom"
 vm_end_of_post 60
 [ "$1" = good ] || vm_expect "Memory test fail at 2aa400"            # the exact address
 vm_setup
-vm_menu 9                                         # MEMORY TEST
+vm_tool 9 1                                       # HARDWARE TESTS: MEMORY TEST
 vm_wait_text "Memory   : 4096K" 5
 vm_expect "Testing  : 1024K - [0-9]+K"
 if [ "$1" = good ]; then
@@ -30,6 +30,5 @@ else
   vm_wait_text " 2   002aa400  ffffffff  fffffff7  00000008  [0-9]+" 120
   vm_expect "Err-Bits : 00000008"
 fi
-vm_key $K_ESC
-vm_wait_text "CMOS SETUP UTILITY" 10
+vm_tool_end
 vm_stop

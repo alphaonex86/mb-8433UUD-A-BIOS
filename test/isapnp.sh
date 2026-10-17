@@ -10,7 +10,7 @@ net_01_link = 0"
 
 isa_page() {  # setup -> HARDWARE INFORMATION -> ISA page, then back to the main menu
   vm_setup
-  vm_info 3                                       # ISA RESOURCES AND IRQ MAP
+  vm_tool 7 3                                     # ISA RESOURCES AND IRQ MAP
   vm_wait_text "IRQ 15" 5
 }
 port() {  # I/O port (hex) -> value read (hex)

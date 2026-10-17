@@ -16,8 +16,8 @@ vm_reset
 vm_wait_text "Press DEL to enter SETUP" 60          # the CMOS is valid now: no error prompt
 vm_cmd usbkey 4c                                    # DEL
 vm_wait_text "CMOS SETUP UTILITY" 20
-vm_cmd usbkey 51 51 51 51 51 51 28                  # down x6: HARDWARE INFORMATION, Enter
-vm_wait_text "HARD DISK SPEED" 10
+vm_cmd usbkey 51 51 51 51 51 51 51 28               # down x7: HARDWARE INFORMATION, Enter
+vm_wait_text "CHIPSET REGISTERS" 10
 vm_cmd usbkey 51 51 28                              # USB DEVICES
 vm_wait_text "UHCI 00:..\.0, 2 ports" 10
 vm_expect "port 1: 1234:0001 keyboard, low speed"

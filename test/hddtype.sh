@@ -25,7 +25,7 @@ vm_expect "Hard disk\(s\) fail \(80\)"
 vm_key $K_DEL
 vm_wait_text "CMOS SETUP UTILITY" 10
 menu_sel=0
-vm_info 4                                         # HARDWARE INFORMATION: IDE DRIVES
+vm_tool 7 4                                       # HARDWARE INFORMATION: IDE DRIVES
 vm_wait_text "Primary Master   : 86B_HD" 5
 vm_expect "CHS 65/16/63, TYPE, PIO mode"
 vm_key $K_ESC $K_ESC $K_ESC

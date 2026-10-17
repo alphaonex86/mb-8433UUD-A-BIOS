@@ -55,7 +55,7 @@ objcopy --weaken-symbol=l2_fill --weaken-symbol=l2_fill_off --weaken-symbol=l2_l
   "$out/setup_seam.o"
 # SeaBIOS's snprintf and znprintf for the SeaBIOS objects only: the harness's own messages use glibc's (%.*s)
 for o in "$out"/sb_*.o "$out/setup_seam.o" "$out/output_seam.o"; do
-  objcopy --redefine-sym snprintf=sb_snprintf --redefine-sym znprintf=sb_znprintf "$o"
+  objcopy --redefine-sym vsnprintf=sb_vsnprintf --redefine-sym snprintf=sb_snprintf --redefine-sym znprintf=sb_znprintf "$o"
 done
 # output.c's screen, debug and warning output: the seams' versions record them
 objcopy -L printf -L panic -L __dprintf -L __warn_timeout -L __warn_noalloc -L __warn_internalerror -L __set_invalid \

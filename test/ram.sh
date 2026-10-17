@@ -1,6 +1,6 @@
 #!/bin/bash
 # SIMM and L2 cache configurations on the fork's UM8881 DRAM/L2 model: coreboot sizes the banks and the
-# cache, the POST summary shows them and the memory test passes. The expected sizes and register fields (50h, 52h,
+# cache, the POST summary shows them, the setup's CPU page each SIMM, and the memory test passes. The expected sizes and register fields (50h, 52h,
 # 53h, 61h of the enabled regions) are what the original BIOS gets on the same configuration, except
 # bank 1 alone, where the original BIOS does not start. usage: ram.sh (all) | ram.sh <one config line>
 . "$(dirname "$0")/lib.sh"
@@ -34,6 +34,13 @@ cache=$8; [ "$cache" = none ] && cache=0K
 grep -q "Extended Memory  : $(($7 - 1024))K" "$vm/screen.txt" || fail "no 'Extended Memory  : $(($7 - 1024))K'"
 grep -q "Cache Memory     : $cache" "$vm/screen.txt" || fail "no 'Cache Memory     : $cache'"
 grep -q "Memory Test FAIL" "$vm/screen.txt" && fail "memory test failed"
+mb=(0 4 8 16 16 32 32 64 64 128) sides=(0 single double single single double double double single double)   # umc_hb4.c
+simm() { [ "$1" = 0 ] && echo "not used" || echo "${mb[$1]} MB ${sides[$1]}-sided"; }
+vm_setup
+vm_tool 7 0                                         # CPU, CACHE AND MEMORY
+vm_wait_text "SIMM3 / SIMM4" 5
+vm_expect "SIMM1 / SIMM2  : $(simm "$1") / $(simm "$2")"
+vm_expect "SIMM3 / SIMM4  : $(simm "$3") / $(simm "$4")"
 expect_bits "$(vm_pci_byte 00:10.0 50)" 0x0f "0x$9" "L2 size/banks"
 expect_bits "$(vm_pci_byte 00:10.0 52)" 0x7f "0x${10}" "DRAM regions"
 expect_bits "$(vm_pci_byte 00:10.0 53)" 0x3f "0x${11}" "DRAM banks"

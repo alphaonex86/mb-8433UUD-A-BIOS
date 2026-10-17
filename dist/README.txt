@@ -41,21 +41,31 @@ Features
 Setup utility (DEL at the prompt), Award layout and keys:
 - STANDARD CMOS, BIOS FEATURES, CHIPSET FEATURES (Auto configuration with the original BIOS's timing
   table per bus clock), POWER MANAGEMENT (APM), PNP/PCI CONFIGURATION, INTEGRATED PERIPHERALS,
-  password, IDE HDD auto detection, BIOS and setup defaults.
+  password, BIOS and setup defaults; menus HARDWARE INFORMATION, BENCHMARKS and HARDWARE TESTS.
 - Boot devices: hard disk (IDE, CHS-only up to LBA48), USB disk, network (card boot ROM), floppy,
   CD-ROM. ESC at the prompt (or F8 in setup): boot menu.
 - USB 1.1/2.0 keyboard and mass storage (UHCI, OHCI, EHCI PCI cards, hubs).
 - ISA PnP cards configured at POST, PnP BIOS with ESCD, ISA option ROMs.
 
-Benchmarks (HARDWARE INFORMATION, inspired by SpeedSys, VGA 640x480):
+Benchmarks (BENCHMARKS, inspired by SpeedSys, VGA 640x480):
 - CPU: integer (MIPS) and FPU (MFLOPS) bars against Intel and AMD 486-class CPUs.
 - Memory speed: read, write and move over 37 block sizes from 4 KB to 2 MB (L1, L2 and DRAM steps).
 - Hard disk: seek times (maximal, random, track to track), buffered and linear read, access time across
   the disk, for any IDE or USB disk; speed bars against the ATA PIO mode limits.
 
-Diagnostics:
+Diagnostics (the tests are in HARDWARE TESTS):
 - MEMORY TEST: the default pass of memtest86+ 4.20 (tests 0-8), reimplemented in the BIOS, endless
-  passes on the free RAM, errors with address, expected and read values and bits.
+  passes on the free RAM, errors with address, expected and read values and bits. F: bit fade test
+  (each pattern left alone 5 minutes: weak cells, too slow a refresh).
+- BOARD TEST: each IRQ line raised by its device on the board (timer, keyboard controller, serial
+  ports, floppy controller, RTC and the slave PIC cascade, FPU error, IDE channels), the PIC masks,
+  the PIT channels, the RTC crystal against the 14.318 MHz clock, the DMA controller's registers,
+  a floppy read by DMA (F), the IDE cable's 16 data lines (WRITE/READ BUFFER), the whole video
+  memory (VESA BIOS, else the 256K of the VGA planes), PCI error bits, UART scratch registers,
+  CMOS RAM, ISA card ROMs and RAM in C8000-DFFFF, the ISA I/O ports that answer (I), the keyboard
+  controller's line test. A hang there leaves its POST code (C8-CF).
+- HDD SURFACE SCAN: every sector of an IDE hard disk read and checked by the drive (VERIFY), the
+  bad ones listed; ESC stops it.
 - CACHE TEST: the L2 cache with each write policy, timing and tag width, read speed in the L2.
 - L2 SRAM TEST: each L2 chip tested in place; says which data chip is bad or missing, which tag RAM bit
   is stuck, and checks the dirty bit.
@@ -64,10 +74,12 @@ Diagnostics:
 - POST codes on port 80h and on COM1 (115200 8N1), unfinished POST reported at the next boot.
 
 Information (HARDWARE INFORMATION):
-- CPU, clock, L1/L2, memory, chipset revisions.
+- CPU, clock, L1/L2, memory, each SIMM socket (size, sides; "not used": a SIMM there was left out),
+  chipset revisions.
 - PCI device list (vendor, class, interrupt pin and IRQ), USB device list, ISA resources, option ROMs
   and IRQ 0-15 map, IDE drives (model, size, geometry, PIO mode).
-- Chipset register dump (UM8881F, UM8886BF, IDE, UM8663BF super I/O).
+- The CHIPSET FEATURES options as the chip has them, C8000-DFFFF shadow RAM or ISA by 16K, and the
+  register dump (UM8881F, UM8886BF, IDE, UM8663BF super I/O).
 
 
 Notes for this board

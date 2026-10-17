@@ -1,7 +1,8 @@
 #!/bin/bash
 # Chipset, PnP/PCI and integrated peripherals: setup values program the same register fields as the
 # original BIOS does for them (test/oracle/award_map.txt); PIO mode per drive; unfinished POSTs make
-# coreboot fall back to the default chipset values; the internal cache stays disabled up to DOS.
+# coreboot fall back to the default chipset values, which the CHIPSET REGISTERS page shows then; the internal cache
+# stays disabled up to DOS.
 . "$(dirname "$0")/lib.sh"
 dos_disk "$vm_dir/hdd.img"
 vm_start chipset "$rom" "$(disk_cfg "$vm_dir/hdd.img")"
@@ -44,6 +45,14 @@ vm_expect "Onboard Parallel Port +: 278H"
 vm_expect "Onboard Parallel Mode +: ECP"
 vm_save
 
+chip_page() {  # setup CHIPSET REGISTERS: the KBC clock and slow refresh in the chip -> back to the main menu
+  vm_setup
+  vm_tool 7 5
+  vm_wait_text "Keyboard Controller Clock: +$1( |$)" 5
+  vm_expect "Slow Refresh \(1/4 Freq\) +: +$2( |$)"
+  vm_key $K_ESC $K_ESC
+}
+
 check_chipset() {  # manual values applied (1) or default ones (0)
   local hb50 hb51 hb5d ibc56
   hb51=$(vm_pci_byte 00:10.0 51) hb50=$(vm_pci_byte 00:10.0 50)
@@ -66,6 +75,7 @@ vm_end_of_post 60
 vm_expect "Serial Port\(s\) +: 3F8 +$"
 vm_expect "Parallel Port\(s\) : 278"
 vm_expect "Pri. Master Disk : 31MB, PIO 2"
+chip_page PCICLKI/4 Disabled
 check_chipset 1
 expect_bits "$(vm_pci_byte 00:12.0 43)" 0xf0 0xb0 "PIRQ A -> IRQ 11 (IBC43 bits 7-4, as the original BIOS)"
 ide43=$(vm_pci_byte 00:12.1 43) ide44=$(vm_pci_byte 00:12.1 44) ide46=$(vm_pci_byte 00:12.1 46)
@@ -81,8 +91,12 @@ vm_cmd out 70 7e
 vm_cmd out 71 02
 vm_reset
 vm_end_of_post 60
-check_chipset 0
 vm_expect "Chipset setup values not used after 2 unfinished POSTs"
+check_chipset 0
+chip_page 7.16MHz Enabled                         # coreboot's values, not the setup's
+vm_key $K_ESC
+vm_wait_text "Quit Without Saving" 5
+vm_key $K_Y
 vm_wait_text "DOS-TEST-OK" 60                     # POST completed
 expect_bits "$(vm_cr0)" 0x40000000 0x40000000 "L1 cache still disabled in DOS (CR0.CD)"
 vm_reset

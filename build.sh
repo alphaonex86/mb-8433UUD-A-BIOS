@@ -4,7 +4,7 @@
 # Output: out/newbios.rom (1 Mbit flash, also used by the 86Box tests) and out/newbios-2mbit.rom (a 2 Mbit flash such
 # as a W49F002A: the board's 1 Mbit socket keeps A17 high, only the upper half is reached; the BIOS is in both halves).
 # Sources: fetch_sources.sh (pinned coreboot_486 and seabios_486 trees, in sources/).
-# usage: [DEBUG=1] [HALT_ON=n] build.sh    DEBUG=1 also builds out/newbios-debug.rom (logs on COM1);
+# usage: [DEBUG=1] [HALT_ON=n] build.sh    DEBUG=1 also builds out/newbios-debug.rom (SeaBIOS's log on COM1);
 #   HALT_ON=1 builds out/newbios-halt1.rom whose Halt On default is No Errors (no keyboard, dead CMOS battery).
 # The patches in patches/ are the source of truth: a missing work tree is recreated from them, and they
 # are re-exported after each build so they always match the built ROM.
@@ -95,19 +95,18 @@ EOF
 
 halt=${HALT_ON:-0} rom=newbios
 [ "$halt" = 0 ] || rom=newbios-halt$halt
-seabios rel "CONFIG_NEWBIOS_HALT_ON=$halt"
-coreboot "$rom" rel "# CONFIG_CONSOLE_SERIAL is not set
+# no coreboot log: its console alone takes 7 KB (13 KB with its messages), more than the flash has left; its POST codes
+# on COM1 time each step, and the debug ROM's SeaBIOS logs the chipset values coreboot set
+nolog="# CONFIG_CONSOLE_SERIAL is not set
 # CONFIG_BOOTBLOCK_CONSOLE is not set
 # CONFIG_POSTCAR_CONSOLE is not set"
-# no coreboot log in the flash ROM (the debug ROM has it)
-if [ -n "${DEBUG:-}" ]; then
+seabios rel "CONFIG_NEWBIOS_HALT_ON=$halt"
+coreboot "$rom" rel "$nolog"
+if [ -n "${DEBUG:-}" ]; then   # SeaBIOS's level 1 log: its key places (device setup, option ROMs, boot, warnings)
   seabios debug "CONFIG_DEBUG_LEVEL=1
 CONFIG_DEBUG_SERIAL=y
-CONFIG_DEBUG_SERIAL_PORT=0x3f8"   # with the coreboot logs, SeaBIOS level 1 fits
-  coreboot newbios-debug debug "# CONFIG_DEFAULT_CONSOLE_LOGLEVEL_4 is not set
-CONFIG_DEFAULT_CONSOLE_LOGLEVEL_7=y
-# CONFIG_BOOTBLOCK_CONSOLE is not set
-# CONFIG_POSTCAR_CONSOLE is not set"   # romstage and ramstage logs; POST codes cover the other stages
+CONFIG_DEBUG_SERIAL_PORT=0x3f8"
+  coreboot newbios-debug debug "$nolog"
 fi
 
 git -C "$sb" add -N src

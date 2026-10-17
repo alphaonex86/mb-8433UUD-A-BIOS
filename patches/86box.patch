@@ -1225,7 +1225,7 @@ index f842cbb338f9527099a3a53bb83d7c3359e3b786..f01f77757bd8ae36872eecc9461ae223
          postcard_written[port & POSTCARD_MASK]++;
  
 diff --git a/src/disk/hdc_ide.c b/src/disk/hdc_ide.c
-index e2ffcab024fd0e8190dd5ad0b4ba11c609cc2347..9d971e7bf268bc359169c3de07fcd22f8aaf9923 100644
+index e2ffcab024fd0e8190dd5ad0b4ba11c609cc2347..aa1c210c45e4fab2b16b16e3e81b960ba16b3eef 100644
 --- a/src/disk/hdc_ide.c
 +++ b/src/disk/hdc_ide.c
 @@ -74,6 +74,11 @@
@@ -1240,7 +1240,18 @@ index e2ffcab024fd0e8190dd5ad0b4ba11c609cc2347..9d971e7bf268bc359169c3de07fcd22f
  #define WIN_WRITE                      0x30 /* 28-Bit Write */
  #define WIN_WRITE_NORETRY              0x31 /* 28-Bit Write - no retry */
  #define WIN_VERIFY                     0x40 /* 28-Bit Verify */
-@@ -621,6 +626,16 @@ ide_hd_identify(const ide_t *ide)
+@@ -94,8 +99,10 @@
+ #define WIN_STANDBYNOW1                0xe0
+ #define WIN_IDLENOW1                   0xe1
+ #define WIN_SETIDLE1                   0xe3
++#define WIN_READ_BUFFER                0xe4 /* The 512-byte sector buffer, to the host */
+ #define WIN_CHECKPOWERMODE1            0xe5
+ #define WIN_SLEEP1                     0xe6
++#define WIN_WRITE_BUFFER               0xe8 /* The 512-byte sector buffer, from the host */
+ #define WIN_IDENTIFY                   0xec /* Ask drive to identify itself */
+ #define WIN_SET_FEATURES               0xef
+ #define WIN_READ_NATIVE_MAX            0xf8
+@@ -621,6 +628,16 @@ ide_hd_identify(const ide_t *ide)
      ide->buffer[83] = ide->buffer[84] = 0x4000;
      ide->buffer[86] = 0x0000;
      ide->buffer[87] = 0x4000;
@@ -1257,7 +1268,7 @@ index e2ffcab024fd0e8190dd5ad0b4ba11c609cc2347..9d971e7bf268bc359169c3de07fcd22f
  }
  
  static void
-@@ -786,6 +801,43 @@ ide_get_sector_format(ide_t *ide)
+@@ -786,6 +803,43 @@ ide_get_sector_format(ide_t *ide)
      }
  }
  
@@ -1301,7 +1312,32 @@ index e2ffcab024fd0e8190dd5ad0b4ba11c609cc2347..9d971e7bf268bc359169c3de07fcd22f
  /**
   * Move to the next sector using CHS addressing
   */
-@@ -1414,7 +1466,7 @@ ide_write_data(ide_t *ide, const uint16_t val)
+@@ -957,6 +1011,24 @@ ide_set_sector(ide_t *ide, int64_t sector_num)
+     }
+ }
+ 
++/* BOX86_IDE_BAD_LBA=<lba>[,<lba>...] (decimal): sectors that VERIFY cannot read back: the first one in the command's
++   range, -1 if none. */
++static int64_t
++ide_bad_sector(ide_t *ide)
++{
++    const char *p     = getenv("BOX86_IDE_BAD_LBA");
++    int64_t     first = ide_get_sector(ide);
++    int64_t     last  = ide_get_last_sector(ide);
++    int64_t     bad   = -1;
++
++    for (; p && *p; p = strchr(p, ',') ? strchr(p, ',') + 1 : "") {
++        int64_t lba = strtoll(p, NULL, 10);
++        if ((lba >= first) && (lba <= last) && ((bad < 0) || (lba < bad)))
++            bad = lba;
++    }
++    return bad;
++}
++
+ static void
+ ide_zero(int d)
+ {
+@@ -1414,7 +1486,7 @@ ide_write_data(ide_t *ide, const uint16_t val)
                      if (hdd[ide->hdd_num].speed_preset == 0) {
                          ide->pending_delay = 0;
                          ide_callback(ide);
@@ -1310,7 +1346,7 @@ index e2ffcab024fd0e8190dd5ad0b4ba11c609cc2347..9d971e7bf268bc359169c3de07fcd22f
                          ide_set_callback(ide, seek_time + xfer_time + ide->pending_delay);
                          ide->pending_delay = 0;
                      } else {
-@@ -1697,18 +1749,25 @@ ide_writeb(uint16_t addr, uint8_t val, void *priv)
+@@ -1697,18 +1769,25 @@ ide_writeb(uint16_t addr, uint8_t val, void *priv)
  
          case 0x2: /* Sector count */
              if (!(ide->tf->atastat & (BSY_STAT | DRQ_STAT)))
@@ -1337,7 +1373,7 @@ index e2ffcab024fd0e8190dd5ad0b4ba11c609cc2347..9d971e7bf268bc359169c3de07fcd22f
                  ide_other->tf->sector  = val;
                  ide_other->lba_addr    = (ide_other->lba_addr & 0xfffff00) | val;
              }
-@@ -1716,11 +1775,13 @@ ide_writeb(uint16_t addr, uint8_t val, void *priv)
+@@ -1716,11 +1795,13 @@ ide_writeb(uint16_t addr, uint8_t val, void *priv)
  
          case 0x4: /* Cylinder low */
              if (!(ide->type & IDE_SHADOW) && !(ide->tf->atastat & (BSY_STAT | DRQ_STAT))) {
@@ -1351,7 +1387,7 @@ index e2ffcab024fd0e8190dd5ad0b4ba11c609cc2347..9d971e7bf268bc359169c3de07fcd22f
                  ide_other->tf->cylinder = (ide_other->tf->cylinder & 0xff00) | val;
                  ide_other->lba_addr     = (ide_other->lba_addr & 0xfff00ff) | (val << 8);
              }
-@@ -1728,11 +1789,13 @@ ide_writeb(uint16_t addr, uint8_t val, void *priv)
+@@ -1728,11 +1809,13 @@ ide_writeb(uint16_t addr, uint8_t val, void *priv)
  
          case 0x5: /* Cylinder high */
              if (!(ide->type & IDE_SHADOW) && !(ide->tf->atastat & (BSY_STAT | DRQ_STAT))) {
@@ -1365,7 +1401,7 @@ index e2ffcab024fd0e8190dd5ad0b4ba11c609cc2347..9d971e7bf268bc359169c3de07fcd22f
                  ide_other->tf->cylinder = (ide_other->tf->cylinder & 0xff) | (val << 8);
                  ide_other->lba_addr     = (ide_other->lba_addr & 0xf00ffff) | (val << 16);
              }
-@@ -1789,6 +1852,7 @@ ide_writeb(uint16_t addr, uint8_t val, void *priv)
+@@ -1789,6 +1872,7 @@ ide_writeb(uint16_t addr, uint8_t val, void *priv)
                  break;
  
              ide_irq_lower(ide);
@@ -1373,7 +1409,45 @@ index e2ffcab024fd0e8190dd5ad0b4ba11c609cc2347..9d971e7bf268bc359169c3de07fcd22f
              ide->command = val;
  
              ide->tf->error = 0;
-@@ -2055,6 +2119,8 @@ ide_read_data(ide_t *ide)
+@@ -2002,6 +2086,24 @@ ide_writeb(uint16_t addr, uint8_t val, void *priv)
+                     }
+                     break;
+ 
++                case WIN_WRITE_BUFFER:
++                    if (ide->type == IDE_ATAPI)
++                        bad = 1;
++                    else {
++                        ide->tf->atastat = DRQ_STAT | DSC_STAT | DRDY_STAT;
++                        ide->tf->pos     = 0;
++                    }
++                    break;
++
++                case WIN_READ_BUFFER:
++                    if (ide->type == IDE_ATAPI)
++                        bad = 1;
++                    else {
++                        ide->tf->atastat = BSY_STAT;
++                        ide_set_callback(ide, 100.0 * IDE_TIME);
++                    }
++                    break;
++
+                 case 0xf0:
+                 default:
+                     bad = 1;
+@@ -2041,7 +2143,11 @@ ide_read_data(ide_t *ide)
+             ide->tf->pos = 0;
+         }
+     } else {
+-        ret = idebufferw[ide->tf->pos >> 1];
++        /* BOX86_IDE_DATA_FAULT=<hex mask>: those data lines of the cable read 0 (a broken wire). */
++        static int data_fault = -1;
++        if (data_fault < 0)
++            data_fault = getenv("BOX86_IDE_DATA_FAULT") ? strtol(getenv("BOX86_IDE_DATA_FAULT"), NULL, 16) : 0;
++        ret = idebufferw[ide->tf->pos >> 1] & ~data_fault;
+         ide->tf->pos += 2;
+ 
+         if (ide->tf->pos >= 512) {
+@@ -2055,6 +2161,8 @@ ide_read_data(ide_t *ide)
                  (ide->command == WIN_READ_MULTIPLE)) {
  
                  ide->tf->secount--;
@@ -1382,7 +1456,7 @@ index e2ffcab024fd0e8190dd5ad0b4ba11c609cc2347..9d971e7bf268bc359169c3de07fcd22f
  
                  if (ide->tf->secount) {
                      ide_next_sector(ide);
-@@ -2566,6 +2632,7 @@ ide_callback(void *priv)
+@@ -2566,6 +2674,7 @@ ide_callback(void *priv)
                  ret = hdd_image_write(ide->hdd_num, ide_get_sector(ide), 1, (uint8_t *) ide->buffer);
                  ide_irq_raise(ide);
                  ide->tf->secount--;
@@ -1390,7 +1464,7 @@ index e2ffcab024fd0e8190dd5ad0b4ba11c609cc2347..9d971e7bf268bc359169c3de07fcd22f
                  if (ide->tf->secount) {
                      ide->tf->atastat = DRQ_STAT | DRDY_STAT | DSC_STAT;
                      ide->tf->pos     = 0;
-@@ -2644,11 +2711,12 @@ ide_callback(void *priv)
+@@ -2644,11 +2753,12 @@ ide_callback(void *priv)
              else {
                  ret = hdd_image_write(ide->hdd_num, ide_get_sector(ide), 1, (uint8_t *) ide->buffer);
                  ide->blockcount++;
@@ -1404,6 +1478,40 @@ index e2ffcab024fd0e8190dd5ad0b4ba11c609cc2347..9d971e7bf268bc359169c3de07fcd22f
                  if (ide->tf->secount) {
                      ide->tf->atastat = DRQ_STAT | DRDY_STAT | DSC_STAT;
                      ide->tf->pos     = 0;
+@@ -2666,9 +2776,13 @@ ide_callback(void *priv)
+         case WIN_VERIFY_ONCE:
+             if (ide->type == IDE_ATAPI)
+                 err = ABRT_ERR;
+-            else if (!ide->tf->lba && (ide->cfg_spt == 0))
++            else if ((!ide->tf->lba && (ide->cfg_spt == 0)) ||
++                     (ide_get_last_sector(ide) > hdd_image_get_last_sector(ide->hdd_num)))
+                 err = IDNF_ERR;
+-            else {
++            else if (ide_bad_sector(ide) >= 0) {
++                ide_set_sector(ide, ide_bad_sector(ide));   /* the error's address, as a drive leaves it */
++                err = UNC_ERR;
++            } else {
+                 ide->tf->pos     = 0;
+                 ide->tf->atastat = DRDY_STAT | DSC_STAT;
+                 ide_irq_raise(ide);
+@@ -2758,6 +2872,17 @@ ide_callback(void *priv)
+                 err = ABRT_ERR;
+             break;
+ 
++        case WIN_READ_BUFFER:
++            ide->tf->pos     = 0;
++            ide->tf->atastat = DRQ_STAT | DRDY_STAT | DSC_STAT;
++            ide_irq_raise(ide);
++            break;
++
++        case WIN_WRITE_BUFFER:
++            ide->tf->atastat = DRDY_STAT | DSC_STAT;
++            ide_irq_raise(ide);
++            break;
++
+         case WIN_IDENTIFY: /* Identify Device */
+             if (ide->type == IDE_HDD) {
+                 ide_identify(ide);
 diff --git a/src/dma.c b/src/dma.c
 index 72f57018f2b1065c97e940e9d8676e9378282f2c..ea4cd5096c7713829c24271308749e0a90de731e 100644
 --- a/src/dma.c
@@ -1449,6 +1557,21 @@ index 72f57018f2b1065c97e940e9d8676e9378282f2c..ea4cd5096c7713829c24271308749e0a
  
      if (dma_at)
          mem_invalidate_range(PhysAddress, PhysAddress + TotalSize - 1);
+diff --git a/src/floppy/fdc.c b/src/floppy/fdc.c
+index 05e033907a7df8d7e673f59db2d24a8a046c8a38..f7472a5c6cdb8ccd0f7cde9045ca30491810c695 100644
+--- a/src/floppy/fdc.c
++++ b/src/floppy/fdc.c
+@@ -795,6 +795,10 @@ fdc_sis(fdc_t *fdc)
+         }
+     }
+ 
++    /* The INT line goes down once the last pending interrupt is sensed, as on the 8272/82077. */
++    if (!fdc->reset_stat && !fdc->fintr && (fdc->irq != 0xff))
++        picintc(1 << fdc->irq);
++
+     fdc->res[10] = fdc->pcn[fdc->res[9] & 3];
+ 
+     fdc_log("Sense interrupt status: 2 parameters to go\n");
 diff --git a/src/include/86box/86box.h b/src/include/86box/86box.h
 index 4308a893685443e12b91fceed2e2a64d53f758cf..690f407a82a28d537b96c774532090ef3c451d1a 100644
 --- a/src/include/86box/86box.h
@@ -1567,6 +1690,27 @@ index 0000000000000000000000000000000000000000..035245c6a6fc48f17bc0eb2440c83ab3
 +extern const device_t usb_uhci_via_device;
 +extern void usb_uhci_key(int mods_usage);   /* modifiers << 8 | HID usage: pressed, then released */
 +#endif
+diff --git a/src/machine/m_at_common.c b/src/machine/m_at_common.c
+index bd122a6ceccbb70aafb1d905b0b7e3d6ba6d5db6..d5e47085ce319bd5526678fb74d48550b3b36e25 100644
+--- a/src/machine/m_at_common.c
++++ b/src/machine/m_at_common.c
+@@ -37,6 +37,7 @@
+  *   Boston, MA 02111-1307
+  *   USA.
+  */
++#include <stdlib.h>
+ #include <stdio.h>
+ #include <stdint.h>
+ #include <string.h>
+@@ -65,7 +66,7 @@ machine_at_common_init(const machine_t *model)
+ {
+     machine_common_init(model);
+ 
+-    refresh_at_enable = 1;
++    refresh_at_enable = !getenv("BOX86_REFRESH_DEAD");   /* no refresh request seen in port 61h bit 4 */
+     pit_devs[0].set_out_func(pit_devs[0].data, 1, pit_refresh_timer_at);
+     pic2_init();
+     dma16_init();
 diff --git a/src/machine/m_at_socket3_pci.c b/src/machine/m_at_socket3_pci.c
 index bf269c3c5da5e52a4189703c15ed406ff0d3ef68..e3c3ee7ce33f73a790330e449618f8321a3ccd1e 100644
 --- a/src/machine/m_at_socket3_pci.c
@@ -2704,6 +2848,24 @@ index a9b566cc2375d873c6fcd7b646b96f3d0797afae..a0aa5297d93b9c0ca2d582960ad15140
                  break;
  
              case 0x11:
+diff --git a/src/pic.c b/src/pic.c
+index 6535ec19bd1c360c22f0aaddc287fe48eb2eab7f..eac3768eeda0d25abd92678929f8bed05c65c900 100644
+--- a/src/pic.c
++++ b/src/pic.c
+@@ -697,6 +697,13 @@ picint_common(uint16_t num, int level, int set, uint8_t *irq_state)
+     if (update_pending == NULL)
+         return;
+ 
++    /* BOX86_IRQ_FAULT=<hex mask>: requests on those IRQ lines never reach the PIC (a broken trace). */
++    static int irq_fault = -1;
++    if (irq_fault < 0)
++        irq_fault = getenv("BOX86_IRQ_FAULT") ? strtol(getenv("BOX86_IRQ_FAULT"), NULL, 16) : 0;
++    if (set && !(num &= ~irq_fault))
++        return;
++
+     /* Make sure to ignore all slave IRQ's, and in case of AT+,
+        translate IRQ 2 to IRQ 9. */
+     for (uint8_t i = 0; i < 8; i++) {
 diff --git a/src/port_92.c b/src/port_92.c
 index cd84dda33a11a6c4b34c9a4b344ce75f86a669f6..b3d6aae851e320d3248e14851437ea7291a24515 100644
 --- a/src/port_92.c
@@ -2719,10 +2881,10 @@ index cd84dda33a11a6c4b34c9a4b344ce75f86a669f6..b3d6aae851e320d3248e14851437ea72
          timer_disable(&dev->pulse_timer);
 diff --git a/src/testctl.c b/src/testctl.c
 new file mode 100644
-index 0000000000000000000000000000000000000000..856add6acd4670afea977a7dbb99802e4695200a
+index 0000000000000000000000000000000000000000..6f4826d492b9aa189b4c1884e9f6d0bd23410a27
 --- /dev/null
 +++ b/src/testctl.c
-@@ -0,0 +1,213 @@
+@@ -0,0 +1,252 @@
 +/*
 + * Test control for automated firmware tests. When $BOX86_TESTCTL names a FIFO, each line written to
 + * it is one command, run in the emulation thread between CPU blocks:
@@ -2736,6 +2898,7 @@ index 0000000000000000000000000000000000000000..856add6acd4670afea977a7dbb99802e
 + *   shot           save a PNG of the screen in <vm path>/screenshots/ at the next frame
 + *   cr0 <file>     append CR0 (hex) to <file>
 + *   flash <file>   append "<instructions fetched> <bytes read>" from the BIOS flash since the last flash command
++ *   rtcadd <s>     advance the RTC by <s> seconds (decimal)
 + *   reset          hard reset (reset button)
 + *   quit           power off (NVR saved)
 + */
@@ -2747,11 +2910,14 @@ index 0000000000000000000000000000000000000000..856add6acd4670afea977a7dbb99802e
 +#include <86box/io.h>
 +#include <86box/keyboard.h>
 +#include <86box/mem.h>
++#include <86box/timer.h>
++#include <86box/nvr.h>
 +#include <86box/plat.h>
 +#include <86box/thread.h>
 +#include <86box/video.h>
 +#include <86box/device.h>
 +#include <86box/usb_uhci.h>
++#include <86box/machine.h>
 +#include "cpu.h"
 +
 +#define CMD_MAX 1024
@@ -2844,10 +3010,42 @@ index 0000000000000000000000000000000000000000..856add6acd4670afea977a7dbb99802e
 +    rename(tmp, path);
 +}
 +
++/* BOX86_LIST_VIDEO=<file>: the video cards valid on the configured machine, one per line
++   "<internal name>|<isa|pci>|<mono|color>|<config section>|<memory option: default, then each value=description>",
++   then exit. */
++static void
++list_video(const char *path)
++{
++    FILE *fp = fopen(path, "w");
++    if (!fp) {
++        pclog("testctl: cannot write %s\n", path);
++        exit(1);
++    }
++    for (int c = 2; video_card_getdevice(c); c++) {
++        const device_t *dev = video_card_getdevice(c);
++        if (!video_card_available(c) || !device_is_valid(dev, machine))
++            continue;
++        fprintf(fp, "%s|%s|%s|%s|", dev->internal_name, (dev->flags & DEVICE_PCI) ? "pci" : "isa",
++                (video_card_get_flags(c) & VIDEO_FLAG_TYPE_MASK) == VIDEO_FLAG_TYPE_MDA ? "mono" : "color", dev->name);
++        for (const device_config_t *cfg = dev->config; cfg && cfg->type != CONFIG_END; cfg++) {
++            if (strcmp(cfg->name, "memory") || cfg->type != CONFIG_SELECTION)
++                continue;
++            fprintf(fp, "%d", cfg->default_int);
++            for (const device_config_selection_t *sel = cfg->selection; sel->description && sel->description[0]; sel++)
++                fprintf(fp, ",%d=%s", sel->value, sel->description);
++        }
++        fputc('\n', fp);
++    }
++    fclose(fp);
++    exit(0);
++}
++
 +void
 +testctl_init(void)
 +{
 +    const char *path = getenv("BOX86_TESTCTL");
++    if (getenv("BOX86_LIST_VIDEO"))
++        list_video(getenv("BOX86_LIST_VIDEO"));
 +    if (!path)
 +        return;
 +    testctl_mutex = thread_create_mutex();
@@ -2927,6 +3125,9 @@ index 0000000000000000000000000000000000000000..856add6acd4670afea977a7dbb99802e
 +            fclose(fp);
 +        }
 +        flash_fetch_count = flash_read_bytes = 0;
++    } else if (!strcmp(cmd, "rtcadd")) {
++        for (int s = atoi(arg); s > 0; s--)
++            rtc_tick();
 +    } else if (!strcmp(cmd, "shot"))
 +        ++monitors[0].mon_screenshots_raw;
 +    else if (!strcmp(cmd, "reset"))
@@ -3704,3 +3905,114 @@ index 0000000000000000000000000000000000000000..e2846a2932b9a5e3b698b0b1acda8580
 +    .force_redraw  = NULL,
 +    .config        = NULL
 +};
+diff --git a/src/video/vid_bochs_vbe.c b/src/video/vid_bochs_vbe.c
+index d14e92ec137221f28c32b5fcfa9efa153402e609..8fb0a08ff575aa3bb33f79f2b88fefab6f9b6646 100644
+--- a/src/video/vid_bochs_vbe.c
++++ b/src/video/vid_bochs_vbe.c
+@@ -738,9 +738,10 @@ bochs_vbe_pci_write(const int func, const int addr, UNUSED(const int len), const
+             if (dev->pci_conf_status & PCI_COMMAND_MEM) {
+                 mem_mapping_enable(&dev->svga.mapping);
+                 if ((dev->pci_regs[0x13] != 0x00) && (dev->pci_regs[0x13] != 0xff)) {
+-                    mem_mapping_enable(&dev->linear_mapping);
++                    /* the BAR may have been written while memory decode was off (as BIOSes do): place it now */
++                    mem_mapping_set_addr(&dev->linear_mapping, dev->pci_regs[0x13] << 24, 0x01000000);
+                     if (dev->pci_regs[0x13] != 0xe0)
+-                        mem_mapping_enable(&dev->linear_mapping_2);
++                        mem_mapping_set_addr(&dev->linear_mapping_2, 0xe0000000, 0x01000000);
+                 }
+                 if (dev->pci_rom_enable && (dev->rom_addr != 0x0000) && (dev->rom_addr < 0xfff8))
+                     mem_mapping_set_addr(&dev->bios_rom.mapping, dev->rom_addr << 16, 0x10000);
+diff --git a/src/video/vid_cl54xx.c b/src/video/vid_cl54xx.c
+index 94cbc6f457ed8d97e4f303e62f9c4eb0836e028d..a1f53df29e0c1c1529a88b92cbb0db0983e34a21 100644
+--- a/src/video/vid_cl54xx.c
++++ b/src/video/vid_cl54xx.c
+@@ -1694,10 +1694,12 @@ gd54xx_recalc_banking(gd54xx_t *gd54xx)
+     svga_t *svga = &gd54xx->svga;
+ 
+     if (!gd54xx_is_5422(svga)) {
+-        svga->extra_banks[0] = (svga->gdcreg[0x09] & 0x7f) << 12;
++        /* The GD5420 has up to 1 MB, its BIOS 1024x768x256 VESA mode: 8 offset bits in 4K (the GD5401/02: 7, 512K). */
++        uint8_t mask = (svga->crtc[0x27] >= CIRRUS_ID_CLGD5420) ? 0xff : 0x7f;
++        svga->extra_banks[0] = (svga->gdcreg[0x09] & mask) << 12;
+ 
+         if (svga->gdcreg[0x0b] & CIRRUS_BANKING_DUAL)
+-            svga->extra_banks[1] = (svga->gdcreg[0x0a] & 0x7f) << 12;
++            svga->extra_banks[1] = (svga->gdcreg[0x0a] & mask) << 12;
+         else
+             svga->extra_banks[1] = svga->extra_banks[0] + 0x8000;
+     } else {
+diff --git a/src/video/vid_svga.c b/src/video/vid_svga.c
+index 31596a2fdc2aad21d054b68f9f21759fbf33056b..f68a41b5d67dd596bfcb83d0321986ff21f5cbcd 100644
+--- a/src/video/vid_svga.c
++++ b/src/video/vid_svga.c
+@@ -2008,6 +2008,25 @@ svga_write_common(uint32_t addr, uint8_t val, uint8_t linear, void *priv)
+         svga->gdcreg[8] = wm;
+ }
+ 
++/* BOX86_VRAM_FAULT=<offset>:<mask> (hex): those bits of the video memory byte at offset read 0 (a bad VRAM chip). */
++static uint32_t
++svga_vram_fault(uint32_t addr, uint32_t val, uint32_t bytes)
++{
++    static int      init;
++    static uint32_t at;
++    static uint32_t mask;
++
++    if (!init) {
++        const char *f = getenv("BOX86_VRAM_FAULT");
++        init          = 1;
++        if (!f || sscanf(f, "%x:%x", &at, &mask) != 2)
++            mask = 0;
++    }
++    if (mask && (at - addr) < bytes)
++        val &= ~(mask << (8 * (at - addr)));
++    return val;
++}
++
+ static __inline uint8_t
+ svga_read_common(uint32_t addr, uint8_t linear, void *priv)
+ {
+@@ -2050,7 +2069,7 @@ svga_read_common(uint32_t addr, uint8_t linear, void *priv)
+         latch_addr = (addr & svga->vram_mask) & ~3;
+         for (uint8_t i = 0; i < count; i++)
+             svga->latch.b[i] = svga->vram[latch_addr | i];
+-        return svga->vram[addr & svga->vram_mask];
++        return svga_vram_fault(addr & svga->vram_mask, svga->vram[addr & svga->vram_mask], 1);
+     } else if (svga->chain4 && !svga->force_old_addr) {
+         readplane = addr & 3;
+         addr      = ((addr & 0xfffc) << 2) | ((addr & 0x30000) >> 14) | (addr & ~0x3ffff);
+@@ -2099,7 +2118,7 @@ svga_read_common(uint32_t addr, uint8_t linear, void *priv)
+ 
+         ret = temp;
+     } else
+-        ret = svga->vram[addr | readplane];
++        ret = svga_vram_fault(addr | readplane, svga->vram[addr | readplane], 1);
+ 
+     return ret;
+ }
+@@ -2378,7 +2397,7 @@ svga_readb_linear(uint32_t addr, void *priv)
+     if (addr >= svga->vram_max)
+         return 0xff;
+ 
+-    return svga->vram[addr & svga->vram_mask];
++    return svga_vram_fault(addr & svga->vram_mask, svga->vram[addr & svga->vram_mask], 1);
+ }
+ 
+ uint16_t
+@@ -2414,7 +2433,7 @@ svga_readw_common(uint32_t addr, uint8_t linear, void *priv)
+     if (addr >= svga->vram_max)
+         return 0xffff;
+ 
+-    return *(uint16_t *) &svga->vram[addr & svga->vram_mask];
++    return svga_vram_fault(addr & svga->vram_mask, *(uint16_t *) &svga->vram[addr & svga->vram_mask], 2);
+ }
+ 
+ uint16_t
+@@ -2472,7 +2491,7 @@ svga_readl_common(uint32_t addr, uint8_t linear, void *priv)
+     if (addr >= svga->vram_max)
+         return 0xffffffff;
+ 
+-    return *(uint32_t *) &svga->vram[addr & svga->vram_mask];
++    return svga_vram_fault(addr & svga->vram_mask, *(uint32_t *) &svga->vram[addr & svga->vram_mask], 4);
+ }
+ 
+ uint32_t

@@ -12,11 +12,10 @@ upto_prompt=$(echo "$normal" | sed '/^B8$/q' | tr '\n' ' ' | sed 's/ $//')
 [ "$(codes)" = "$upto_prompt" ] || fail "POST codes: $(codes) - expected: $upto_prompt"
 vm_setup
 [ "$(codes | sed 's/.* //')" = B9 ] || fail "no B9 in setup: $(codes)"
-vm_menu 9                                         # MEMORY TEST
+vm_tool 9 1                                       # HARDWARE TESTS: MEMORY TEST
 vm_wait_text "Testing  :" 10
 [ "$(codes | sed 's/.* //')" = BA ] || fail "no BA in the memory test: $(codes)"
-vm_key $K_ESC
-vm_wait_text "CMOS SETUP UTILITY" 10
+vm_tool_end
 vm_key $K_ESC
 vm_wait_text "Quit Without Saving" 5
 vm_key $K_Y

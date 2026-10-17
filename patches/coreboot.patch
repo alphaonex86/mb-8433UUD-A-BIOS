@@ -1619,6 +1619,31 @@ index 7a95fffee4f19b93233c30ca894e9b79ef03a62d..40d877547992671e4c04f6e9c8c23dca
  
  	// if (CONFIG(SMM_TSEG))
  		// smm_list_regions();
+diff --git a/src/device/Kconfig b/src/device/Kconfig
+index 01984dc15307c13817200020be4acc3d35f14faa..b052bc0bbeee83bae5025618bd090a9be64e4892 100644
+--- a/src/device/Kconfig
++++ b/src/device/Kconfig
+@@ -549,10 +549,12 @@ config ECAM_MMCONF_SUPPORT
+ 
+ config PCIX_PLUGIN_SUPPORT
+ 	bool
++	default n if ARCH_486	# a 486 PCI bus has no such bridges
+ 	default y
+ 
+ config CARDBUS_PLUGIN_SUPPORT
+ 	bool
++	default n if ARCH_486	# a 486 PCI bus has no such bridges
+ 	default y
+ 
+ config AZALIA_PLUGIN_SUPPORT
+@@ -570,6 +572,7 @@ config AZALIA_LOCK_DOWN_R_WO_GCAP
+ 
+ config PCIEXP_PLUGIN_SUPPORT
+ 	bool
++	default n if ARCH_486	# a 486 PCI bus has no such bridges
+ 	default y
+ 
+ config ECAM_MMCONF_BASE_ADDRESS
 diff --git a/src/device/pci_device.c b/src/device/pci_device.c
 index 88736f8d5b7e26a49280889ae33f356bf7b5827f..8578d91a8d09567c48bea1196e8bebe61ad72739 100644
 --- a/src/device/pci_device.c
@@ -1923,10 +1948,10 @@ index cdee25bf7b472e92238defb7432a7891ef4bff75..f648216b7eccca8db4f166f17566319c
  struct chip_operations mainboard_ops = {
 diff --git a/src/mainboard/biostar/mb8433/newbios.c b/src/mainboard/biostar/mb8433/newbios.c
 new file mode 100644
-index 0000000000000000000000000000000000000000..7740150563112a63afe5505d7b2525125e46524f
+index 0000000000000000000000000000000000000000..19bf874201ae5cc173f51c38127acb1962a44fe0
 --- /dev/null
 +++ b/src/mainboard/biostar/mb8433/newbios.c
-@@ -0,0 +1,194 @@
+@@ -0,0 +1,171 @@
 +/* SPDX-License-Identifier: GPL-2.0-only */
 +
 +/*
@@ -1962,43 +1987,20 @@ index 0000000000000000000000000000000000000000..7740150563112a63afe5505d7b252512
 +	return NB_CMOS_GET(cmos_read, index);
 +}
 +
-+struct field {
-+	u8 setting;
-+	pci_devfn_t dev;
-+	u8 reg, mask;
-+	u8 count, value[4];   /* register field for setting value 0..count-1 */
-+};
-+
 +/* Not timings: applied with Auto Configuration and after unfinished POSTs too, like the original. */
-+static const struct field caching[] = {
-+	{ NB_SYSBIOS_CACHE,     HOST_BRIDGE, 0x55, 0x20, 2, { 0x00, 0x20 } },
-+	{ NB_VIDBIOS_CACHE,     HOST_BRIDGE, 0x55, 0x01, 2, { 0x00, 0x01 } },
++static const struct nb_field caching[] = {
++	{ NB_SYSBIOS_CACHE,     0, 0x55, 0x20, 2, { 0x00, 0x20 } },
++	{ NB_VIDBIOS_CACHE,     0, 0x55, 0x01, 2, { 0x00, 0x01 } },
 +};
 +
-+static const struct field chipset[] = {
-+	{ NB_DRAM_READ_WS,      HOST_BRIDGE, 0x51, 0xc0, 4, { 0x00, 0x40, 0x80, 0xc0 } },	/* 3..0 WS */
-+	{ NB_DRAM_WRITE_WS,     HOST_BRIDGE, 0x51, 0x30, 4, { 0x00, 0x10, 0x20, 0x30 } },
-+	{ NB_L2_WS,             HOST_BRIDGE, 0x50, 0x30, 4, { 0x00, 0x10, 0x20, 0x30 } },
-+	{ NB_HOST_PCI_POST_WS,  HOST_BRIDGE, 0x52, 0x80, 2, { 0x00, 0x80 } },	/* 1 WS, 0 WS */
-+	{ NB_HOST_PCI_BURST,    HOST_BRIDGE, 0x53, 0x80, 2, { 0x00, 0x80 } },
-+	{ NB_BURST_COPYBACK,    HOST_BRIDGE, 0x53, 0x40, 2, { 0x00, 0x40 } },
-+	{ NB_EARLY_CACHE_WRITE, HOST_BRIDGE, 0x5d, 0x80, 2, { 0x00, 0x80 } },
-+	{ NB_SLOW_REFRESH,      HOST_BRIDGE, 0x5d, 0x10, 2, { 0x00, 0x10 } },
-+	{ NB_EDO,               HOST_BRIDGE, 0x61, 0xc0, 2, { 0x00, 0xc0 } },
-+	{ NB_PCI_POSTED_WRITE,  ISA_BRIDGE,  0x40, 0x04, 2, { 0x00, 0x04 } },
-+	{ NB_DEVSEL,            ISA_BRIDGE,  0x40, 0x03, 3, { 0x01, 0x00, 0x02 } },	/* slow, medium, fast */
-+	{ NB_PCI_BUS_PARK,      ISA_BRIDGE,  0x41, 0x04, 2, { 0x04, 0x00 } },
-+	{ NB_PREEMPT_PCI,       ISA_BRIDGE,  0x46, 0x10, 2, { 0x10, 0x00 } },
-+	{ NB_KBC_CLOCK,         ISA_BRIDGE,  0x56, 0x0c, 4, { 0x00, 0x04, 0x08, 0x0c } },	/* 7.16 MHz, PCICLK/4 /3 /2 */
-+	{ NB_HOST_PCI_CLOCK,    ISA_BRIDGE,  0xa4, 0x03, 3, { 0x01, 0x02, 0x00 } },	/* 1:1, 1:2/3, 1:1/2 */
-+};
++static const struct nb_field chipset[] = { NB_TIMING_FIELDS NB_OPTION_FIELDS };
 +
-+static void apply(const struct field *f, int count)
++static void apply(const struct nb_field *f, int count)
 +{
 +	for (; count--; f++) {
 +		u8 v = setting(f->setting);
 +		if (v < f->count)
-+			pci_update_config8(f->dev, f->reg, ~f->mask, f->value[v]);
++			pci_update_config8(f->ibc ? ISA_BRIDGE : HOST_BRIDGE, f->reg, ~f->mask, f->value[v]);
 +	}
 +}
 +
@@ -2123,10 +2125,10 @@ index 0000000000000000000000000000000000000000..7740150563112a63afe5505d7b252512
 +}
 diff --git a/src/mainboard/biostar/mb8433/newbios_cmos.h b/src/mainboard/biostar/mb8433/newbios_cmos.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..aab321ded71cf9e2a1a8ccaed898d9112dc9f2e8
+index 0000000000000000000000000000000000000000..e899a153fd5d1e4852390a96c40037961bb6fb5d
 --- /dev/null
 +++ b/src/mainboard/biostar/mb8433/newbios_cmos.h
-@@ -0,0 +1,67 @@
+@@ -0,0 +1,90 @@
 +/*
 + * newBIOS CMOS layout, shared by SeaBIOS (setup utility, POST options) and coreboot (chipset options).
 + * build.sh copies this file into both trees. One nibble per setting: index i is in byte
@@ -2192,6 +2194,29 @@ index 0000000000000000000000000000000000000000..aab321ded71cf9e2a1a8ccaed898d911
 +};
 +
 +#define NB_CMOS_GET(read, i)  (((read)(NB_CMOS_BASE + (i) / 2) >> ((i) % 2 * 4)) & 0x0f)
++
++/* Chipset features: the register field the original BIOS programs for each setting value (coreboot applies them,
++   the setup shows the chip's); ibc: 0 host bridge UM8881F, 1 ISA bridge UM8886BF */
++struct nb_field {
++	unsigned char setting, ibc, reg, mask, count, value[4];
++};
++#define NB_TIMING_FIELDS \
++	{ NB_DRAM_READ_WS,      0, 0x51, 0xc0, 4, { 0x00, 0x40, 0x80, 0xc0 } },	/* 3..0 WS */ \
++	{ NB_DRAM_WRITE_WS,     0, 0x51, 0x30, 4, { 0x00, 0x10, 0x20, 0x30 } }, \
++	{ NB_L2_WS,             0, 0x50, 0x30, 4, { 0x00, 0x10, 0x20, 0x30 } }, \
++	{ NB_EDO,               0, 0x61, 0xc0, 2, { 0x00, 0xc0 } }, \
++	{ NB_HOST_PCI_CLOCK,    1, 0xa4, 0x03, 3, { 0x01, 0x02, 0x00 } },	/* 1:1, 1:2/3, 1:1/2 */
++#define NB_OPTION_FIELDS \
++	{ NB_HOST_PCI_POST_WS,  0, 0x52, 0x80, 2, { 0x00, 0x80 } },	/* 1 WS, 0 WS */ \
++	{ NB_HOST_PCI_BURST,    0, 0x53, 0x80, 2, { 0x00, 0x80 } }, \
++	{ NB_BURST_COPYBACK,    0, 0x53, 0x40, 2, { 0x00, 0x40 } }, \
++	{ NB_EARLY_CACHE_WRITE, 0, 0x5d, 0x80, 2, { 0x00, 0x80 } }, \
++	{ NB_SLOW_REFRESH,      0, 0x5d, 0x10, 2, { 0x00, 0x10 } }, \
++	{ NB_PCI_POSTED_WRITE,  1, 0x40, 0x04, 2, { 0x00, 0x04 } }, \
++	{ NB_DEVSEL,            1, 0x40, 0x03, 3, { 0x01, 0x00, 0x02 } },	/* slow, medium, fast */ \
++	{ NB_PCI_BUS_PARK,      1, 0x41, 0x04, 2, { 0x04, 0x00 } }, \
++	{ NB_PREEMPT_PCI,       1, 0x46, 0x10, 2, { 0x10, 0x00 } }, \
++	{ NB_KBC_CLOCK,         1, 0x56, 0x0c, 4, { 0x00, 0x04, 0x08, 0x0c } },	/* 7.16 MHz, PCICLK/4 /3 /2 */
 +
 +#endif
 diff --git a/src/mainboard/biostar/mb8433/post_serial.c b/src/mainboard/biostar/mb8433/post_serial.c
@@ -2600,3 +2625,29 @@ index 5866170a67d2828e51976b8d4bd079e833d8d121..98037c9cfd913c901afb0f59f93fc560
  	//TODO which can be left to seabios?
  	isa_dma_init();
  	setup_i8259();
+diff --git a/toolchain.inc b/toolchain.inc
+index 031fc2884fff6231454cf51a97d92ca429ce1d96..8f2d40fce07120a0948db2707ba8b83717f49efb 100644
+--- a/toolchain.inc
++++ b/toolchain.inc
+@@ -62,7 +62,7 @@ ARCHDIR-ppc64	:= ppc64
+ CFLAGS_arm	+=
+ CFLAGS_arm64	+= -mgeneral-regs-only
+ CFLAGS_riscv	+=
+-CFLAGS_x86_32	+=
++CFLAGS_x86_32	+= -mpreferred-stack-boundary=2   # 4-byte stack alignment: 16 only costs code on a 486
+ CFLAGS_x86_64	+= -mcmodel=large -mno-red-zone
+ CFLAGS_ppc64	+=
+ 
+diff --git a/util/cbfstool/lzma/lzma.c b/util/cbfstool/lzma/lzma.c
+index 4a95ccbc886375303b257c717984d1af7c231048..e632cb7ce37c06d57a373723a0da36cbf54d0590 100644
+--- a/util/cbfstool/lzma/lzma.c
++++ b/util/cbfstool/lzma/lzma.c
+@@ -95,7 +95,7 @@ int do_lzma_compress(char *in, int in_len, char *out, int *out_len)
+ 	props.dictSize = in_len;
+ 	props.pb = 0; /* PosStateBits, default: 2, range: 0..4 */
+ 	props.lp = 0; /* LiteralPosStateBits, default: 0, range: 0..4 */
+-	props.lc = 1; /* LiteralContextBits, default: 3, range: 0..8 */
++	props.lc = 3; /* LiteralContextBits, default: 3, range: 0..8; 3 is the most coreboot's decoder takes (lzma.c scratchpad) */
+ 	props.fb = 273; /* NumFastBytes */
+ 	props.mc = 0; /* MatchFinderCycles, default: 0 */
+ 	props.algo = 1; /* AlgorithmNo, apparently, 0 and 1 are valid values. 0 = fast mode */

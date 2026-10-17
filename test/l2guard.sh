@@ -6,7 +6,7 @@
 mkdir -p "$vm_dir"
 l2_page() {  # setup -> CPU page; expects its L2 line
   vm_setup
-  vm_info 0                                         # CPU, CACHE AND MEMORY
+  vm_tool 7 0                                       # CPU, CACHE AND MEMORY
   vm_wait_text "L2 cache +: $1" 5
 }
 vm_start l2guard "$rom" ""

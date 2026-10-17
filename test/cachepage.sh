@@ -10,7 +10,7 @@ vm_setup
 vm_save
 vm_wait_text "Press DEL to enter SETUP" 60
 vm_setup
-vm_menu 10                                          # CACHE TEST
+vm_tool 9 2                                         # HARDWARE TESTS: CACHE TEST
 vm_wait_text "L2 found at POST: 256K, 1 bank\(s\)" 10
 vm_key 1e                                           # A: run all
 sleep 1
@@ -24,17 +24,17 @@ vm_wait_text "line at 00000100: read 5aa5c23c 5aa5c23c, want 5aa5c23c: ok" 20
 vm_wait_text "Done, press a key" 90
 vm_expect "off    50h: 10 .* CR0 11 "               # L2 off after the speed test (timing kept), L1 on again
 vm_key $K_ENTER
-vm_key $K_ESC
-vm_info 0                                           # CPU, CACHE AND MEMORY
+vm_key $K_ESC $K_ESC
+vm_tool 7 0                                         # CPU, CACHE AND MEMORY
 vm_wait_text "L2 cache +: 256 KB, write-back, enabled" 5
 vm_cmd out 70 3e                                    # an init that stopped in its write-through fill
 vm_cmd out 71 a3
 vm_reset
 vm_wait_text "Press DEL to enter SETUP" 60
 vm_setup
-vm_info 0
+vm_tool 7 0
 vm_wait_text "L2 cache +: 256 KB, OFF: last init stopped at write-through fill" 5
 vm_key $K_ESC $K_ESC
-vm_menu 10
+vm_tool 9 2
 vm_wait_text "the last L2 init stopped at step 2: write-through fill" 10
 vm_stop

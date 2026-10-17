@@ -7,7 +7,7 @@ ABC="1e 30 2e" XYZ="2d 15 2c"
 vm_start password "$rom"
 vm_end_of_post 60
 vm_setup
-vm_menu 7                                          # SUPERVISOR PASSWORD
+vm_menu 6                                          # SUPERVISOR PASSWORD
 vm_wait_text "Enter Password:" 5
 type_word $ABC
 vm_wait_text "Confirm Password:" 5

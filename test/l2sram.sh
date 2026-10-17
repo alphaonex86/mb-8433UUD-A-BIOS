@@ -18,7 +18,7 @@ run() {  # L2 KB, banks, data fault, tag fault -> the page on screen
     sleep 0.5
   done
   vm_setup
-  vm_menu 11                                        # L2 SRAM TEST
+  vm_tool 9 3                                       # HARDWARE TESTS: L2 SRAM TEST
   vm_wait_text "Found:|No L2 data SRAM" 60
 }
 chips() { printf "Found: %dK = %d bank%s x 4 chips of %dK x 8 = %d data chips \\\\+ 1 tag RAM" "$1" "$2" \
