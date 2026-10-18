@@ -103,6 +103,21 @@ index f7c2306c3d505f3a719499df054c1c68e47f191b..b5fed6046d2ba351a86861527ccc9c92
          set_code_invalid(regs, RET_EUNSUPPORTED);
          return;
      }
+diff --git a/src/bios_name.h b/src/bios_name.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..32511237714c1b5ef6de9b157a23d6ae52ab2bb1
+--- /dev/null
++++ b/src/bios_name.h
+@@ -0,0 +1,9 @@
++/*
++ * The BIOS name, on screen and in SeaBIOS's tables. Shared by coreboot and SeaBIOS (build.sh copies it into both trees).
++ */
++#ifndef NEWBIOS_BIOS_NAME_H
++#define NEWBIOS_BIOS_NAME_H
++
++#define BIOS_NAME "mb-8433UUD"
++
++#endif
 diff --git a/src/block.c b/src/block.c
 index cd78688c9962dcea39314940cc041297c3cc69fa..bdf9a70db862516a4f17ff539a2448c818283ea8 100644
 --- a/src/block.c
@@ -681,10 +696,18 @@ index 7368bb6d56abdff66c9424de7924f22d2eefd2ce..b4480faadd109f29bb34f6a7b5e76122
          .section .text.asm.\func
          .global \func
 diff --git a/src/fw/biostables.c b/src/fw/biostables.c
-index 1c09a785bac946d6b2dbb645f12fd63eead38130..6eaec40c137d2a9cac14e00126e052edcfbb1371 100644
+index 1c09a785bac946d6b2dbb645f12fd63eead38130..6417fb720b17fc9445a56aba14e03e7071b75d78 100644
 --- a/src/fw/biostables.c
 +++ b/src/fw/biostables.c
-@@ -29,7 +29,7 @@ copy_fseg_table(const char *name, void *pos, u32 size)
+@@ -17,6 +17,7 @@
+ #include "std/smbios.h" // struct smbios_21_entry_point
+ #include "string.h" // memcpy
+ #include "util.h" // copy_table
++#include "bios_name.h" // BIOS_NAME
+ #include "x86.h" // outb
+ 
+ struct pir_header *PirAddr VARFSEG;
+@@ -29,7 +30,7 @@ copy_fseg_table(const char *name, void *pos, u32 size)
          warn_noalloc();
          return NULL;
      }
@@ -693,7 +716,7 @@ index 1c09a785bac946d6b2dbb645f12fd63eead38130..6eaec40c137d2a9cac14e00126e052ed
      memcpy(newpos, pos, size);
      return newpos;
  }
-@@ -62,7 +62,7 @@ copy_mptable(void *pos)
+@@ -62,7 +63,7 @@ copy_mptable(void *pos)
      u32 length = p->length * 16;
      u16 mpclength = ((struct mptable_config_s *)p->physaddr)->length;
      if (length + mpclength > BUILD_MAX_MPTABLE_FSEG) {
@@ -702,7 +725,7 @@ index 1c09a785bac946d6b2dbb645f12fd63eead38130..6eaec40c137d2a9cac14e00126e052ed
                  , length + mpclength);
          return;
      }
-@@ -74,7 +74,7 @@ copy_mptable(void *pos)
+@@ -74,7 +75,7 @@ copy_mptable(void *pos)
          warn_noalloc();
          return;
      }
@@ -711,7 +734,7 @@ index 1c09a785bac946d6b2dbb645f12fd63eead38130..6eaec40c137d2a9cac14e00126e052ed
      memcpy(newpos, pos, length);
      newpos->physaddr = (u32)newpos + length;
      newpos->checksum -= checksum(newpos, sizeof(*newpos));
-@@ -155,7 +155,7 @@ find_acpi_table(u32 signature)
+@@ -155,7 +156,7 @@ find_acpi_table(u32 signature)
              struct acpi_table_header *tbl = (void*)(u32)xsdt->table_offset_entry[i];
              if (!tbl || tbl->signature != signature)
                  continue;
@@ -720,7 +743,7 @@ index 1c09a785bac946d6b2dbb645f12fd63eead38130..6eaec40c137d2a9cac14e00126e052ed
              return tbl;
          }
      }
-@@ -167,7 +167,7 @@ find_acpi_table(u32 signature)
+@@ -167,7 +168,7 @@ find_acpi_table(u32 signature)
              struct acpi_table_header *tbl = (void*)rsdt->table_offset_entry[i];
              if (!tbl || tbl->signature != signature)
                  continue;
@@ -729,6 +752,14 @@ index 1c09a785bac946d6b2dbb645f12fd63eead38130..6eaec40c137d2a9cac14e00126e052ed
              return tbl;
          }
      }
+@@ -482,7 +483,6 @@ smbios_new_type_0(void *start,
+     return end;
+ }
+ 
+-#define BIOS_NAME "SeaBIOS"
+ #define BIOS_DATE "04/01/2014"
+ 
+ /*
 diff --git a/src/fw/coreboot.c b/src/fw/coreboot.c
 index 172b56543e58321490c1b8101ef3d4b319c2a4dd..d2b74005480de90e08bfdaea57a2ebaa8a8af316 100644
 --- a/src/fw/coreboot.c
@@ -4785,10 +4816,10 @@ index 3a179b5be98d884fa604cc77a1469156cc4fbc76..917e64e53ac485011bd61daf189343e4
      set_equipment_flags(0xc000, count << 14);
 diff --git a/src/setup.c b/src/setup.c
 new file mode 100644
-index 0000000000000000000000000000000000000000..d89591fa79b803b6f8868b99344d798b5047efbf
+index 0000000000000000000000000000000000000000..c90abb1a59de345a416c1a85fa90e54f81d4b7ea
 --- /dev/null
 +++ b/src/setup.c
-@@ -0,0 +1,5618 @@
+@@ -0,0 +1,5619 @@
 +// Award-style CMOS setup utility (DEL during POST), the settings it keeps in CMOS (newbios_cmos.h)
 +// and the POST options SeaBIOS applies from them.
 +//
@@ -4817,6 +4848,7 @@ index 0000000000000000000000000000000000000000..d89591fa79b803b6f8868b99344d798b
 +#include "util.h" // setup_menu
 +#include "x86.h" // cpuid
 +#include "post_serial.h" // post_serial (after x86.h: inb, outb)
++#include "bios_name.h" // BIOS_NAME
 +
 +u8 Setting[NB_COUNT];
 +static int SetupDefaulted, ChipsetFallback, PrevPostCode;   // POST warnings, see setup_post_warnings()
@@ -9509,7 +9541,7 @@ index 0000000000000000000000000000000000000000..d89591fa79b803b6f8868b99344d798b
 +    snprintf(text, sizeof(text), "Memory      : %d KB", 1024 + ext_mem_kb());
 +    gfx_text(row++, 2, C_WHITE, text);
 +    gfx_text(row++, 2, C_WHITE, "Chipset     : UMC UM8881F + UM8886BF");
-+    snprintf(text, sizeof(text), "BIOS        : mb-8433UUD %s", RELEASE_DATE);
++    snprintf(text, sizeof(text), "BIOS        : " BIOS_NAME " %s", RELEASE_DATE);
 +    gfx_text(row++, 2, C_WHITE, text);
 +    if (known && mhz) {                         // references: this CPU's own speed per MHz
 +        for (refs = 0; refs < ARRAY_SIZE(RefMhz); refs++) {

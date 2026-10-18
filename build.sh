@@ -30,8 +30,10 @@ fi
 for dst in "$sb/src/newbios_cmos.h" "$cb/src/mainboard/biostar/mb8433/newbios_cmos.h"; do
   cmp -s "$nb/cmos.h" "$dst" || cp "$nb/cmos.h" "$dst"
 done
-for dst in "$sb/src/post_serial.h" "$cb/src/mainboard/biostar/mb8433/post_serial.h"; do   # POST codes on COM1
-  cmp -s "$nb/post_serial.h" "$dst" || cp "$nb/post_serial.h" "$dst"
+for h in post_serial.h bios_name.h; do   # POST codes on COM1; the BIOS name
+  for dst in "$sb/src/$h" "$cb/src/mainboard/biostar/mb8433/$h"; do
+    cmp -s "$nb/$h" "$dst" || cp "$nb/$h" "$dst"
+  done
 done
 
 seabios() {  # name, extra SeaBIOS config -> $sb/out-<name>/bios.bcj.elf (x86 BCJ filtered)

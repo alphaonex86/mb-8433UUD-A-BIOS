@@ -1888,6 +1888,21 @@ index 067135c8edb68b785d8bea4f5160008304a9b43d..37db980c000acc767da73ade149845fb
 +romstage-y += newbios.c
 +ramstage-y += newbios.c
 +all-y += post_serial.c
+diff --git a/src/mainboard/biostar/mb8433/bios_name.h b/src/mainboard/biostar/mb8433/bios_name.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..32511237714c1b5ef6de9b157a23d6ae52ab2bb1
+--- /dev/null
++++ b/src/mainboard/biostar/mb8433/bios_name.h
+@@ -0,0 +1,9 @@
++/*
++ * The BIOS name, on screen and in SeaBIOS's tables. Shared by coreboot and SeaBIOS (build.sh copies it into both trees).
++ */
++#ifndef NEWBIOS_BIOS_NAME_H
++#define NEWBIOS_BIOS_NAME_H
++
++#define BIOS_NAME "mb-8433UUD"
++
++#endif
 diff --git a/src/mainboard/biostar/mb8433/irq_tables.c b/src/mainboard/biostar/mb8433/irq_tables.c
 index 5775d519435e9b210737826dbc818eb427e96b0a..d44d1069b628256b6bf2813d03d079461e13b92e 100644
 --- a/src/mainboard/biostar/mb8433/irq_tables.c
@@ -1948,10 +1963,10 @@ index cdee25bf7b472e92238defb7432a7891ef4bff75..f648216b7eccca8db4f166f17566319c
  struct chip_operations mainboard_ops = {
 diff --git a/src/mainboard/biostar/mb8433/newbios.c b/src/mainboard/biostar/mb8433/newbios.c
 new file mode 100644
-index 0000000000000000000000000000000000000000..37b5a62c784ad541c4d0bcbf9c5b8439ef9e3832
+index 0000000000000000000000000000000000000000..2165c57affe84a003b69be7b3b1d31c7998e0813
 --- /dev/null
 +++ b/src/mainboard/biostar/mb8433/newbios.c
-@@ -0,0 +1,171 @@
+@@ -0,0 +1,172 @@
 +/* SPDX-License-Identifier: GPL-2.0-only */
 +
 +/*
@@ -1971,6 +1986,7 @@ index 0000000000000000000000000000000000000000..37b5a62c784ad541c4d0bcbf9c5b8439
 +#include <northbridge/umc/um8881/reg_init.h>
 +
 +#include "newbios_cmos.h"
++#include "bios_name.h"
 +
 +static int settings_valid(void)
 +{
@@ -2027,7 +2043,7 @@ index 0000000000000000000000000000000000000000..37b5a62c784ad541c4d0bcbf9c5b8439
 +	if (setting(NB_CHIPSET_AUTO))
 +		return;
 +	if (fails >= NB_BOOTFAIL_MAX) {
-+		printk(BIOS_WARNING, "mb-8433UUD: %u unfinished POSTs, chipset setup values not used\n",
++		printk(BIOS_WARNING, BIOS_NAME ": %u unfinished POSTs, chipset setup values not used\n",
 +		       fails);
 +		return;
 +	}
@@ -2103,7 +2119,7 @@ index 0000000000000000000000000000000000000000..37b5a62c784ad541c4d0bcbf9c5b8439
 +		return;		/* the manual values of setup are in use */
 +	for (i = 0; i < ARRAY_SIZE(rows) - 1 && bus >= rows[i].bus_below; i++)
 +		;
-+	printk(BIOS_INFO, "mb-8433UUD: %u MHz bus, auto chipset timings %u\n", bus, i);
++	printk(BIOS_INFO, BIOS_NAME ": %u MHz bus, auto chipset timings %u\n", bus, i);
 +	pci_update_config8(HOST_BRIDGE, HB50_L2_CFG_0, ~0x30, rows[i].hb50);
 +	pci_update_config8(HOST_BRIDGE, HB51_L2_CFG_1, ~0xf0, rows[i].hb51);
 +	pci_update_config8(ISA_BRIDGE, IBC56_CLOCK, ~0x0f, rows[i].ibc56);
