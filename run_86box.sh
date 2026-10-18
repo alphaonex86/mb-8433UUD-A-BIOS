@@ -1,5 +1,5 @@
 #!/bin/bash
-# Try newBIOS interactively in the 86Box fork (Qt GUI): Biostar MB-8433UUD, Am5x86-133, one 32 MB SIMM and
+# Try mb-8433UUD interactively in the 86Box fork (Qt GUI): Biostar MB-8433UUD, Am5x86-133, one 32 MB SIMM and
 # 256 KB L2 (other SIMMs: [UMC HB4(8881F)] in vm/86box.cfg, types in umc_hb4.c), TGUI9440,
 # FreeDOS disk on IDE, a 2 Mbit flash (W49F002A) with iPXE in its lower half for the NICs: the operator's
 # RTL8139C (10ec:8039, no C+ mode) and an RTL8169S, no socket ROMs; SLiRP DHCP/TFTP serving boot.ipxe (iPXE

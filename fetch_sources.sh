@@ -1,5 +1,5 @@
 #!/bin/bash
-# Download what newBIOS is built and tested from, at the tested versions, into sources/ (idempotent:
+# Download what mb-8433UUD is built and tested from, at the tested versions, into sources/ (idempotent:
 # existing entries, e.g. symlinks to local copies, are kept). Tarballs are checked against their SHA-256.
 set -euo pipefail
 src=$(dirname "$(readlink -f "$0")")/sources

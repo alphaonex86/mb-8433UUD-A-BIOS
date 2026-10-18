@@ -1,5 +1,5 @@
 #!/bin/bash
-# Build newBIOS for the Biostar MB-8433UUD-A: coreboot_486 (UMC chipset init) + SeaBIOS (BIOS services, option ROMs,
+# Build mb-8433UUD for the Biostar MB-8433UUD-A: coreboot_486 (UMC chipset init) + SeaBIOS (BIOS services, option ROMs,
 # CMOS setup). Network boot is Etherboot in the RTL8139's socket ROM, not in this flash.
 # Output: out/newbios.rom (1 Mbit flash, also used by the 86Box tests) and out/newbios-2mbit.rom (a 2 Mbit flash such
 # as a W49F002A: the board's 1 Mbit socket keeps A17 high, only the upper half is reached; the BIOS is in both halves).

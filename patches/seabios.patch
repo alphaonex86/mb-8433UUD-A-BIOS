@@ -2512,12 +2512,12 @@ index 7d702d161f597f222f5271f7682e5da27689a9b1..f8ffc7680e1cb2da2f536b77c559f8df
  int rom_confirm(u32 size);
 diff --git a/src/newbios_cmos.h b/src/newbios_cmos.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..e899a153fd5d1e4852390a96c40037961bb6fb5d
+index 0000000000000000000000000000000000000000..a2f04dfbca019548dbd445c1e3be01c840175a5e
 --- /dev/null
 +++ b/src/newbios_cmos.h
 @@ -0,0 +1,90 @@
 +/*
-+ * newBIOS CMOS layout, shared by SeaBIOS (setup utility, POST options) and coreboot (chipset options).
++ * mb-8433UUD CMOS layout, shared by SeaBIOS (setup utility, POST options) and coreboot (chipset options).
 + * build.sh copies this file into both trees. One nibble per setting: index i is in byte
 + * NB_CMOS_BASE + i / 2, low nibble for even i.
 + */
@@ -4285,7 +4285,7 @@ index 559eac645ade5472db79692adb9865d883eb4c63..3066b631836cd71e45fd9a1f772b1c75
      panic("Could not reboot");
  }
 diff --git a/src/romlayout.S b/src/romlayout.S
-index bdbb72c7a0ea265d2537933c735d5615c6a025bb..4fc6fba937bb862cb1e186bd909fb4c784bca728 100644
+index bdbb72c7a0ea265d2537933c735d5615c6a025bb..6e94b64249fc9ada7a365e15079062990888f235 100644
 --- a/src/romlayout.S
 +++ b/src/romlayout.S
 @@ -5,6 +5,24 @@
@@ -4296,7 +4296,7 @@ index bdbb72c7a0ea265d2537933c735d5615c6a025bb..4fc6fba937bb862cb1e186bd909fb4c7
 +// assembled as 16-bit code (.code16, gcc -m16) and linked with the 16-bit C
 +// code into the 64 KiB BIOS segment F000 (BUILD_BIOS_ADDR = 0xF0000), so
 +// symbol values here are offsets inside that segment; a 32-bit flat address
-+// is BUILD_BIOS_ADDR + symbol. In newBIOS, coreboot loads the SeaBIOS ELF
++// is BUILD_BIOS_ADDR + symbol. In mb-8433UUD, coreboot loads the SeaBIOS ELF
 +// into the RAM at 0xE82C0-0xFFFFF (the shadow RAM of the BIOS area) and
 +// enters entry_elf in 32-bit mode.
 +// The rest of this file is the runtime glue: real-mode interrupt entry
@@ -4307,7 +4307,7 @@ index bdbb72c7a0ea265d2537933c735d5615c6a025bb..4fc6fba937bb862cb1e186bd909fb4c7
 +// call32()) and 32-bit segmented mode (APM/PCI BIOS for protected-mode
 +// callers).
 +// DECLFUNC sections that nothing references are dropped by layoutrom.py;
-+// with the newBIOS configuration (out-rel) entry_smi, entry_smp, entry_csm,
++// with the mb-8433UUD configuration (out-rel) entry_smi, entry_smp, entry_csm,
 +// __csm_return, entry_sercon and irqentry_arg_extrastack are not in the ROM.
 +
  #include "asm-offsets.h" // BREGS_*
@@ -4427,7 +4427,7 @@ index bdbb72c7a0ea265d2537933c735d5615c6a025bb..4fc6fba937bb862cb1e186bd909fb4c7
   ****************************************************************/
  
  // Entry point for QEMU smi interrupts.
-+// (QEMU only: not in the newBIOS ROM, nor is entry_smp below)
++// (QEMU only: not in the mb-8433UUD ROM, nor is entry_smp below)
          DECLFUNC entry_smi
  entry_smi:
          // Transition to 32bit mode.
@@ -4546,7 +4546,7 @@ index bdbb72c7a0ea265d2537933c735d5615c6a025bb..4fc6fba937bb862cb1e186bd909fb4c7
 +// jumps to its ELF entry (entry_elf) in 32-bit flat protected mode with
 +// the coreboot GDT. Replace coreboot IDT/GDT/segments/stack with the
 +// SeaBIOS ones and continue in handle_post() (post.c, 32-bit flat C).
-+// EAX/EBX are kept for multiboot (not enabled in newBIOS).
++// EAX/EBX are kept for multiboot (not enabled in mb-8433UUD).
          DECLFUNC entry_elf
          .code32
  entry_elf:
@@ -4643,7 +4643,7 @@ index bdbb72c7a0ea265d2537933c735d5615c6a025bb..4fc6fba937bb862cb1e186bd909fb4c7
          .endm
  
 +        // F000:E05B - POST entry, reached from reset_vector below. In
-+        // newBIOS the first POST is entered through entry_elf instead, so
++        // mb-8433UUD the first POST is entered through entry_elf instead, so
 +        // here HaveRunPost is normally set (a restart after POST) and the
 +        // resume/reboot path is taken.
          ORG 0xe05b
@@ -4705,7 +4705,7 @@ index bdbb72c7a0ea265d2537933c735d5615c6a025bb..4fc6fba937bb862cb1e186bd909fb4c7
  
 +        // F000:F045 and F000:F065 - INT 10h, video: only an iret. The
 +        // video BIOS of the graphics card (option ROM) installs the real
-+        // INT 10h handler (newBIOS has no built-in VGA BIOS).
++        // INT 10h handler (mb-8433UUD has no built-in VGA BIOS).
          ORG 0xf045
  entry_10_0x0f:
          // XXX - INT 10 Functions 0-Fh Entry Point
@@ -4753,7 +4753,7 @@ index bdbb72c7a0ea265d2537933c735d5615c6a025bb..4fc6fba937bb862cb1e186bd909fb4c7
          ORG 0xff54
          IRQ_ENTRY_ARG 05
  
-+        // F000:FFF0 = physical 0xFFFF0. In newBIOS the hardware reset
++        // F000:FFF0 = physical 0xFFFF0. In mb-8433UUD the hardware reset
 +        // vector is coreboot (0xFFFFFFF0 in flash, reset16.S); this copy
 +        // in shadow RAM is reached by a jump to F000:FFF0 / FFFF:0000 (warm
 +        // reboot by software) or from coreboot entry16.S after a CPU-only
@@ -4785,7 +4785,7 @@ index 3a179b5be98d884fa604cc77a1469156cc4fbc76..917e64e53ac485011bd61daf189343e4
      set_equipment_flags(0xc000, count << 14);
 diff --git a/src/setup.c b/src/setup.c
 new file mode 100644
-index 0000000000000000000000000000000000000000..fa384a86fa9207da2fbdcd2e678a8eafadfac79c
+index 0000000000000000000000000000000000000000..d89591fa79b803b6f8868b99344d798b5047efbf
 --- /dev/null
 +++ b/src/setup.c
 @@ -0,0 +1,5618 @@
@@ -9509,7 +9509,7 @@ index 0000000000000000000000000000000000000000..fa384a86fa9207da2fbdcd2e678a8eaf
 +    snprintf(text, sizeof(text), "Memory      : %d KB", 1024 + ext_mem_kb());
 +    gfx_text(row++, 2, C_WHITE, text);
 +    gfx_text(row++, 2, C_WHITE, "Chipset     : UMC UM8881F + UM8886BF");
-+    snprintf(text, sizeof(text), "BIOS        : newBIOS %s", RELEASE_DATE);
++    snprintf(text, sizeof(text), "BIOS        : mb-8433UUD %s", RELEASE_DATE);
 +    gfx_text(row++, 2, C_WHITE, text);
 +    if (known && mhz) {                         // references: this CPU's own speed per MHz
 +        for (refs = 0; refs < ARRAY_SIZE(RefMhz); refs++) {
@@ -10435,7 +10435,7 @@ index 4c8e5df68b49543cd5a8f55d778f3a51c80ccd48..8f0be489094862655b8953039c13f97e
  
  void VISIBLE16 check_irqs(void);
 diff --git a/src/util.h b/src/util.h
-index 9226bd135295ae9535bb9f23d57753c940f11250..ab13b9ef3824e60737803d7d66bdad9516b22a64 100644
+index 9226bd135295ae9535bb9f23d57753c940f11250..ff79c4405a1323763866fc8f12b09fc04753a92d 100644
 --- a/src/util.h
 +++ b/src/util.h
 @@ -48,6 +48,48 @@ int boot_lchs_find_scsi_device(struct pci_device *pci, int target, int lun,
@@ -10446,7 +10446,7 @@ index 9226bd135295ae9535bb9f23d57753c940f11250..ab13b9ef3824e60737803d7d66bdad95
 +extern u8 ApmEnabled;
 +
 +// setup.c
-+// newBIOS POST codes on port 80h for a POST card, in POST order (newBIOS/POSTCODES.md).
++// mb-8433UUD POST codes on port 80h for a POST card, in POST order (mb-8433UUD-A-BIOS/POSTCODES.md).
 +enum { POST_SEABIOS = 0xb0, POST_PLATFORM, POST_VGA, POST_BANNER, POST_DEVICES, POST_MEMTEST,
 +       POST_OPTIONROMS, POST_SUMMARY, POST_PROMPT, POST_SETUP, POST_SETUP_MEMTEST, POST_PREPBOOT,
 +       POST_BOOT, POST_NO_BOOT };

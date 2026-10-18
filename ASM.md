@@ -1,4 +1,4 @@
-# newBIOS: the parts of the ROM that are not C
+# mb-8433UUD: the parts of the ROM that are not C
 
 This guide covers the parts of `out/newbios.rom` (128 KiB flash) that are not C:
 
@@ -277,8 +277,8 @@ SeaBIOS:
 ### Configuration and scripts (not firmware code)
 
 - Kconfig files (`src/**/Kconfig`, SeaBIOS `src/Kconfig`) and `Makefile.inc` lists.
-- `configs/mb8433_author.config` and `newBIOS/seabios.config`, combined by `newBIOS/build.sh`. Note that `build.sh` re-exports `patches/*.patch` from the work trees after each build, so the comments in these files become part of the patches.
-- `newBIOS/cmos.h` (the CMOS map shared by SeaBIOS and coreboot) is C.
+- `configs/mb8433_author.config` and `mb-8433UUD-A-BIOS/seabios.config`, combined by `mb-8433UUD-A-BIOS/build.sh`. Note that `build.sh` re-exports `patches/*.patch` from the work trees after each build, so the comments in these files become part of the patches.
+- `mb-8433UUD-A-BIOS/cmos.h` (the CMOS map shared by SeaBIOS and coreboot) is C.
 
 ## 7. Oddities found while commenting
 

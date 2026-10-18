@@ -1,4 +1,4 @@
-# newBIOS — open replacement BIOS for the Biostar MB-8433UUD-A
+# mb-8433UUD — open replacement BIOS for the Biostar MB-8433UUD-A
 
 Goal: the compatibility of the board's Award BIOS (v4.50PG UUD960306I on the chip):
 DOS and Linux 6.18 run as under the original, the RTL8139C socket ROM boots over the network, an
@@ -111,7 +111,7 @@ timings; the drive gets SET FEATURES and the UM8886BF timing registers get the c
 mode (the original BIOS leaves them untouched in 86Box). CHS-only drives (no LBA), LBA28 and LBA48 drives
 (> 128 GiB, e.g. a 1 TB SSD on an IDE adapter; LBA48 and its block mode added to the 86Box fork) work.
 
-CMOS: AT standard bytes 10h-2Dh (floppy types, equipment, memory sizes, checksum) plus the newBIOS block
+CMOS: AT standard bytes 10h-2Dh (floppy types, equipment, memory sizes, checksum) plus the mb-8433UUD block
 from 40h (one nibble per setting, password hash at 78h, signature 7Bh, checksum 7Ch, unfinished-POST
 counter 7Eh), defined in `cmos.h` and shared by SeaBIOS and coreboot. A cleared or Award CMOS loads
 defaults.
@@ -125,7 +125,7 @@ mapping. PnP BIOS runtime functions 00h-0Bh and 40h-43h with the ESCD in the fla
 
 ## Compatibility with the original BIOS
 
-| Feature | Award | newBIOS | Test |
+| Feature | Award | mb-8433UUD | Test |
 |---|---|---|---|
 | CPU 486/Am5x86 | yes | yes | all |
 | DRAM sizing (4 SIMM banks, 4-128 MB SIMMs), L2 128K-1M, 1/2 banks | yes | coreboot_486 | `ram` (same results as the original BIOS on the fork's model) |
@@ -158,7 +158,7 @@ write-protected after POST like under Award.
 
 ## Try it in 86Box
 
-`./run_86box.sh [rom]` rebuilds newBIOS if a source changed (without `rom`) and opens the Qt 86Box fork on a persistent VM in
+`./run_86box.sh [rom]` rebuilds mb-8433UUD if a source changed (without `rom`) and opens the Qt 86Box fork on a persistent VM in
 `vm/` (CMOS, disk and settings kept between runs, flash reloaded from the ROM, RTC not synced to the host).
 Hardware: 84xxuuda, Am5x86-133, one 32 MB SIMM and 256 KB L2
 (`[UMC HB4(8881F)]` in `vm/86box.cfg`), TGUI9440, FreeDOS disk
@@ -228,7 +228,7 @@ out) and COM1:
 | `vgamem` | BOARD TEST's video memory test on every video card 86Box offers for this board (`BOX86_LIST_VIDEO`), default memory sizes (`vgamem.sh all`: every size, 207 runs): no error, no alias, the size the card's VESA BIOS reports (a linear frame buffer on 32, a window on 85, the VGA planes on 66, 20 not a VGA, in the full run) |
 | `cachepage` | setup CACHE TEST: the 16 L2 settings run and work on the emulated L2, the POST's write-back L2 is on again afterwards |
 | `l2sram` | setup L2 SRAM TEST on 64K-1M, 1 or 2 bank L2s (all found, all OK), then 86Box faults injected (`BOX86_L2_FAULT=bank:lane:mask`, `BOX86_L2_TAG_FAULT=mask`): a chip with a stuck bit, a dead chip, a tag bit, the dirty bit, two faults at once: each named; a POST that stopped with the L2 on leaves it off at the next |
-| `otherflash` | a JEDEC flash chip newBIOS does not know (86Box `BOX86_FLASH=sst39sf010`, as a W49F002A or SST39SF010A): POST, save and reboot, reset; the flash is not written |
+| `otherflash` | a JEDEC flash chip mb-8433UUD does not know (86Box `BOX86_FLASH=sst39sf010`, as a W49F002A or SST39SF010A): POST, save and reboot, reset; the flash is not written |
 | `warmboot` | Ctrl+Alt+Del (keyboard controller reset: the board's port 92h does not reset; CPU only, not the chipset) on the operator's setup (2 Mbit flash, RTL8139C with Etherboot, Am5x86 3x40): from DOS twice, from the setup, then three times with the card left receiving by iPXE (loaded by Etherboot) while LAN broadcasts arrive every ms (`BOX86_NET_NOISE_MS`): the POST always finishes |
 | `flashlinux` | BIOS update from Linux on the emulated board (W49F002A, A17 high, its JEDEC commands and sector map, programming only clears bits), booted by Etherboot + iPXE: flashrom (UMC patch) refuses a plain 2 Mbit write (the real board's lost BIOS), `bios-update` refuses a wrong size, reads the chip back as the image, rewrites the 96 KiB main block and a boot block byte; after a reset the rewritten BIOS runs, the upper half holds it, the lower half is untouched |
 | `usbkbd` | USB keyboard only (86Box UHCI like the operator's VIA card, low-speed HID keyboard; the PS/2 keyboard never answers): no keyboard error, F1/DEL/setup navigation and Ctrl+Alt+Del on it work, the USB page lists it; with an AT keyboard too (also one waking after the POST's 3 s), both type |
@@ -236,7 +236,7 @@ out) and COM1:
 | `awarddefaults` | `tools/award_defaults.py` (own -lh5- encoder/decoder) changes the original Award BIOS's setup defaults (External Cache off, boot C,A): the patched 2 Mbit image boots in 86Box with them on a cleared CMOS and the L2 off |
 | `usbfault` | USB faults injected by the emulator (`BOX86_USB_FAULT`): keyboard stalling its requests (keyboard error, no hang), disk never sending data, stalling READ, bad CSW signature (POST finishes, boot fails with a message), disk unplugged after its first READ then Ctrl+Alt+Del (POST finishes without it) |
 | `bench` | benchmark pages (SpeedSys style: black, 8x8 font) on 86Box screenshots, by pixel colors and by their text (`test/bench/gridocr.py` matches each 8x8 cell against the video BIOS font exactly; no AI in the tests): memory chart curves (read, write, move), CPU ALU bar, linear read curve of the IDE disk, a speed bar per disk (IDE and USB); back to text mode after each |
-| `deadcmos` | dead CMOS battery: random CMOS images (RTC registers, shutdown code 0Fh, newBIOS block, boot-failure counter) at power-on; POST reaches the F1 prompt and DOS boots |
+| `deadcmos` | dead CMOS battery: random CMOS images (RTC registers, shutdown code 0Fh, mb-8433UUD block, boot-failure counter) at power-on; POST reaches the F1 prompt and DOS boots |
 | `devfuzz` | native: SeaBIOS IDE/ATAPI, floppy, PCI option ROMs, ISA ROMs and ISA PnP, USB (UHCI/OHCI/EHCI, hubs, keyboard, storage) and CMOS/setup, compiled unchanged under ASan/UBSan with SeaBIOS's own printf engine (src/output.c), against fault-injecting device models (edge values, garbage, never-ready devices, USB controllers still running after a warm boot: stopped before bus mastering), a ROM in a 2 Mbit flash's unreachable lower half never run: no hang, crash or overflow |
 
 Inputs: `sources/` (`fetch_sources.sh`); the 86Box ROM set ([86Box/roms](https://github.com/86Box/roms) in
@@ -245,7 +245,7 @@ come from the target directory of the coreboot_486 author's
 [buildroot_486](https://github.com/pc2005cz/buildroot_486) build in `sources/buildroot_486/output`).
 `test/oracle/sweep.sh`, `sweep2.sh` and `diff.py` regenerate `award_map.txt` from `BIOSORIGINAL.bin` (a
 dump of the board's original BIOS, not included); `award_findings.md` is what reading that image taught; `test/oracle/ram.sh <config>` prints
-what the original BIOS and newBIOS find on one SIMM/L2 configuration, as a `test/ram.sh` line.
+what the original BIOS and mb-8433UUD find on one SIMM/L2 configuration, as a `test/ram.sh` line.
 
 86Box fork (`build_86box.sh`, `patches/86box.patch` on 86Box 6.0): test control FIFO
 (`$BOX86_TESTCTL`: `key`, `text`, `pci`, `in`, `out`, `cr0`, `shot` (PNG screenshot), `rtcadd` (RTC forward), `reset`, `quit`); POST card
@@ -261,7 +261,7 @@ read as 0; all banks empty keeps the stock flat RAM):
 CPU addresses decoded to SIMM cells as registers 52h/53h/61h program them, MA mapping from the UM8881F
 documentation, L2 SRAM answering forced hits (5Ah bit 6), and the CPU's internal cache as RAM (lines read
 after INVD kept while CR0.CD and NW are set), so the unmodified coreboot raminit runs in 86Box. On 18
-configurations the original BIOS gets the same sizes and register fields as newBIOS 13 times; it rejects a
+configurations the original BIOS gets the same sizes and register fields as mb-8433UUD 13 times; it rejects a
 64 KB L2, sees a 64 MB 12/11 double-sided SIMM as 32 MB and does not start with bank 0 empty or with a
 12/10 double-sided and an 11/11 single-sided SIMM in one pair. `GUI=1` also builds the Qt GUI used by
 `run_86box.sh`.
@@ -342,4 +342,4 @@ W49F002A programs at 5 V (JP13 at 5 V); the original Intel 28F001BX-T needs 12 V
 
 ## Checking the L2 under Linux
 
-`tools/cachetest.c` (built as `build/cachetest` with the HDD image's i486 uClibc toolchain) prints the UM8881F L2 registers the BIOS left and the read speed by block size from 4 KB to 2 MB. Run it as root under the original Award BIOS and under newBIOS: a working L2 shows a speed step between the L1 size and the L2 size, a fake or disabled one shows none.
+`tools/cachetest.c` (built as `build/cachetest` with the HDD image's i486 uClibc toolchain) prints the UM8881F L2 registers the BIOS left and the read speed by block size from 4 KB to 2 MB. Run it as root under the original Award BIOS and under mb-8433UUD: a working L2 shows a speed step between the L1 size and the L2 size, a fake or disabled one shows none.

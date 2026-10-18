@@ -1,4 +1,4 @@
-# Award 4.50PG (UUD960306I) reverse engineering - findings for newBIOS
+# Award 4.50PG (UUD960306I) reverse engineering - findings for mb-8433UUD
 
 Image: `BIOSORIGINAL.bin` (md5 e0ffa2aa98801fec9d1041df4a4b0272). Modules extracted with the local `7z`
 (LZH support, CRC checked): `original.tmp` (lh5, 131072 B, flash 0x00000) and `ncr306.16k` (lh5, 16384 B,
@@ -6,7 +6,7 @@ flash 0x109D2). `original.tmp` maps to E0000-FFFFF: file offset 0x00000-0x0FFFF 
 0x10000-0x1FFFF = F000:xxxx. All addresses below are segment:offset in that image unless "flash" is said.
 Same work done on `uud960326s.bin` (= `lastbios.bin`, 03/26/96) and `UUD0520S.BIN` (4.51PG, 05/20/96).
 
-Tags: **[V]** verified in the image (bytes/disassembly read), **[I]** inference, **[S]** checked in newBIOS /
+Tags: **[V]** verified in the image (bytes/disassembly read), **[I]** inference, **[S]** checked in mb-8433UUD /
 coreboot source only (not run).
 
 Scripts used (not included): `d16.py` (16-bit disassembler on original.tmp), `sl.py` (same, follows Award's
@@ -15,11 +15,11 @@ stackless `mov sp,ret / jmp` calls), `defs2.py <original.tmp>` (setup item table
 
 ---------------------------------------------------------------------------------------------------------
 
-## 1. Prioritized list: what newBIOS lacks or does differently
+## 1. Prioritized list: what mb-8433UUD lacks or does differently
 
 ### P1 - real-board risk / wrong behaviour
 
-**1.1 "Auto Configuration" in Award is a table indexed by the bus clock; newBIOS Auto is one fixed, more
+**1.1 "Auto Configuration" in Award is a table indexed by the bus clock; mb-8433UUD Auto is one fixed, more
 aggressive set.** [V]
 - Pointer table F000:5A25 (24 words: 12 speed classes x {1 bank, 2 banks} L2), labels at F000:5A54
   (`16MHZ 20MHZ 25MHZ 33MHZ 40MHZ 50MHZ 50DX2 66DX2 80DX2 75DX4 100DX4 120DX4`, each `1B`/`2B`). Each entry
@@ -39,24 +39,24 @@ aggressive set.** [V]
   (bit5 = x4, bit7 = x3, bit6 = x2) and scans the 8 thresholds at E000:3BCA (66/60/50/40/33/25/20/16 MHz). [V]
   In 86Box with the Am5x86-133, the Award result is the 33 MHz row: the oracle baseline (51=a6, 50=d4,
   56=01, a4=81) matches it. [V]
-- newBIOS Auto = coreboot romstage (`um8881/romstage.c`): HB51=E4 (DRAM **read 0 WS**, write 1 WS),
+- mb-8433UUD Auto = coreboot romstage (`um8881/romstage.c`): HB51=E4 (DRAM **read 0 WS**, write 1 WS),
   HB50[5:4]=11 (**L2 2-1-1-1**), IBC56=01, IBCA4=81 (1:1), whatever the bus clock. [S]
   Differences at 33 MHz: DRAM read 0 WS vs 1 WS, L2 2-1-1-1 vs 3-1-1-1 (coreboot itself comments "TODO
-  TEST one freezes benches" on HB51). At 40/50 MHz bus newBIOS keeps PCI at 1:1 (40/50 MHz PCI). [S]
+  TEST one freezes benches" on HB51). At 40/50 MHz bus mb-8433UUD keeps PCI at 1:1 (40/50 MHz PCI). [S]
 - The unfinished-POST fallback returns to these same coreboot values, so it does not protect against them. [S/I]
 - Why it helps: matching Award's Auto (measured bus clock -> row) removes the main real-board timing risk.
   The coreboot author's real-board lspci under Award (`um8881/reg_init.h`) shows HB51=A4/A5 (1 WS read)
   and HB50 = FB or DB (2-1-1-1 or 3-1-1-1), so 1 WS read is what Award ran on real hardware. [V source]
 
-**1.2 EDO mode is on in newBIOS Auto; Award default is off.** [V/S]
+**1.2 EDO mode is on in mb-8433UUD Auto; Award default is off.** [V/S]
 - Award: "EDO DRAM install option" (CMOS 38h bit5) default Disabled in both default sets; F000:78EF writes
   HB61[7:6] = C0 only when the option is Enabled, else 00. No EDO auto-detection found (the "EDO DRAM
   installed !" string at F000:7B72 is only printed when the option is set, E000:3D9D -> F000:7B87). [V]
-- coreboot romstage writes HB61=C4 (EDO mode bits 7:6 = 11) and newBIOS Auto keeps it. [S]
+- coreboot romstage writes HB61=C4 (EDO mode bits 7:6 = 11) and mb-8433UUD Auto keeps it. [S]
 - Risk [I]: EDO read timing on FPM SIMMs. Real board SIMM type unknown. Also HB61 bit3 (Award "EDO DRAM
   Read Speed", 0 = 4-2-2-2, 1 = 3-1-1-1): C4 = 4-2-2-2 although the coreboot comment says 3-1-1-1.
 
-**1.3 System/Video BIOS cacheable are never set by newBIOS.** [V Award / S newBIOS]
+**1.3 System/Video BIOS cacheable are never set by mb-8433UUD.** [V Award / S mb-8433UUD]
 - Award Setup defaults: System BIOS Cacheable = Enabled, Video BIOS Cacheable = Enabled (HB55 bits 5, 0).
   F000:7B10: if C0000 is not shadowed (HB54 bit1 = 0) Video BIOS cacheable is cleared; if HB55 bit5 is set,
   HB58=0F and HB59=00 (the oracle baseline shows 58=0f 59=00; reset values ff/0f). [V]
@@ -64,10 +64,10 @@ aggressive set.** [V]
   `pci_update_config8(HB55, ~0x3f, 0)` after romstage applied the setup values: HB55 bits 5 and 0 end up 0
   whatever the setup says; HB58/59 stay FF/0F. Nothing later sets them (SeaBIOS shadow.c only touches bit 6).
   `test/chipset.sh` does not check HB55. [S, not run]
-- Why it helps: Award runs the F-segment BIOS and the shadowed VGA BIOS from L1/L2; newBIOS does not
+- Why it helps: Award runs the F-segment BIOS and the shadowed VGA BIOS from L1/L2; mb-8433UUD does not
   (slower INT 10h/BIOS calls under DOS), and the two setup items have no effect.
 
-**1.4 PCI IRQ pool: newBIOS can route a PCI INT line to IRQ 15 (secondary IDE).** [V Award / S coreboot]
+**1.4 PCI IRQ pool: mb-8433UUD can route a PCI INT line to IRQ 15 (secondary IDE).** [V Award / S coreboot]
 - Award: "1st..4th Available IRQ" (CMOS 52h-53h nibbles) defaults 11, 10, 9, 12 in both sets [V];
   routing bitmap in the B10E table = 0x1EB8 (IRQ 3,4,5,7,9,10,11,12) [V]; never 14/15. Real board under
   Award (coreboot author's lspci): IBC43=9A, IBC44=CC (INTA 9, INTB 10, INTC/INTD 12). [V source]
@@ -93,7 +93,7 @@ aggressive set.** [V]
 - Then `Press F1 to continue, DEL to enter SETUP` and E000:3340 waits for F1 (3B00h) or DEL (5300h).
 - "Halt On" (CMOS 3Eh bits 2:0): 0 All Errors (default), 1 No Errors, 2 All But Keyboard, 4 All But
   Diskette, 6 All But Disk/Key (3, 5 invalid).
-- newBIOS only prints `CMOS settings invalid - defaults loaded` (setup.c). Cheap and useful: CMOS battery
+- mb-8433UUD only prints `CMOS settings invalid - defaults loaded` (setup.c). Cheap and useful: CMOS battery
   failed (RTC reg D bit7), keyboard missing, drive failures. Keep the default non-halting for a headless
   netboot box [I].
 
@@ -104,7 +104,7 @@ aggressive set.** [V]
 - PnP BIOS header `$PnP` F000:C530, real-mode entry F000:C566, functions 00, 01, 02, 03-05, 09, 0A, 0B
   (06-08 unsupported), 40 (ISA config structure), 41-43 (ESCD info/read/write). ESCD lives in the flash
   4 KiB parameter block (flash 0x1D000).
-- newBIOS: SeaBIOS PnP BIOS answers only function 60h (`pnpbios.c`). [S]
+- mb-8433UUD: SeaBIOS PnP BIOS answers only function 60h (`pnpbios.c`). [S]
 - Impact [I]: DOS drivers for ISA PnP cards (sound, NE2000 PnP) need the card configured by the BIOS (or
   a DOS PnP tool). The real board's ESCD lists no ISA PnP card (see 3.6), so this only matters if one is
   added. Win9x/Linux configure ISA PnP themselves.
@@ -129,19 +129,19 @@ Items whose two defaults differ (0306):
 | VESA Slave / IDE / VGA Access Check | Enabled | Disabled |
 | I/O Region Access Check | Disabled | 1F0h-1FFh |
 
-newBIOS has only Setup defaults. Main menu records (F000:3A67) contain both LOAD BIOS DEFAULTS and LOAD
+mb-8433UUD has only Setup defaults. Main menu records (F000:3A67) contain both LOAD BIOS DEFAULTS and LOAD
 SETUP DEFAULTS at the same position (row 14, col 5): only one is shown (which one: not determined).
 
 **2.4 Serial port 2 default = COM4/2E8 in this version.** [V]
 - Setup default of "Onboard Serial Port 2" (CMOS 7Ah word, mask 7000h) is value 4 = COM4/2E8; the oracle
   baseline agrees (chip-9 shows COM4/2E8 with no SIO change) and the real board's ESCD records a serial
-  port at 2E8h IRQ3 (see 3.6). newBIOS default is 2F8. Award offers COM1-COM4 on both ports
-  (newBIOS: 2 choices per port). The 05/20/96 BIOS changed this default to Disabled.
+  port at 2E8h IRQ3 (see 3.6). mb-8433UUD default is 2F8. Award offers COM1-COM4 on both ports
+  (mb-8433UUD: 2 choices per port). The 05/20/96 BIOS changed this default to Disabled.
 
 **2.5 IDE block mode (READ/WRITE MULTIPLE).** [V]
 - INT 13h disk entry F000:A404, function table F000:A50C. At F000:A98E, if the per-drive multiple count
   (BDA 40:AD-40:B0) > 1, command 20h becomes C4h and 30h becomes C5h (`shr 4; add C2h`).
-- "IDE HDD Block Mode" (CMOS 11h bit6) default Enabled in both sets. newBIOS: same item and default, also for LBA48 (C4h/C5h, 29h/39h).
+- "IDE HDD Block Mode" (CMOS 11h bit6) default Enabled in both sets. mb-8433UUD: same item and default, also for LBA48 (C4h/C5h, 29h/39h).
   Benefit [I]: fewer DRQ handshakes in DOS disk I/O; small for SeaBIOS's polled PIO.
 
 **2.6 Hard disk type table and User type.** [V]
@@ -154,7 +154,7 @@ SETUP DEFAULTS at the same position (row 14, col 5): only one is shown (which on
   37: 1024/2/17, 38: 1024/16/17, 39: 918/15/17, 40: 820/6/17, 41: 1024/5/17, 42: 1024/5/26,
   43: 809/6/17, 44: 809/6/26, 45: 776/8/33, 46: 684/16/38, 47: User (zeros).
 - Standard CMOS shows CYLS HEAD PRECOMP LANDZ SECTOR MODE; IDE auto-detect offers NORMAL/LBA/LARGE with the
-  note "Some OSes (like SCO-UNIX) must use NORMAL for installation". newBIOS has Auto/None only.
+  note "Some OSes (like SCO-UNIX) must use NORMAL for installation". mb-8433UUD has Auto/None only.
   Useful only for non-IDENTIFY controllers (MFM/RLL/ESDI on ISA) or forced geometry [I].
 
 ### P3 - low priority, cosmetic or informative
@@ -168,19 +168,19 @@ SETUP DEFAULTS at the same position (row 14, col 5): only one is shown (which on
   Password", "Auto-Configure HDD: Sector, Cylinder, Head...", "Save Data to CMOS & Exit SETUP",
   "Abandon all Datas". Standard CMOS also has Video (CMOS 14h bits 5:4), Halt On, Daylight Saving.
 - **3.2 CPU name** [V]: table E000:4120 indexed by CPU type/2; the Am5x86 (type 52h) prints
-  `Am5x86-P75` (newBIOS: `Am5x86-WB`). Also `Enhanced Am486DX2/DX4`, `Cx5x86`, `U486..`, `TI486..`, `P24T/D`.
+  `Am5x86-P75` (mb-8433UUD: `Am5x86-WB`). Also `Enhanced Am486DX2/DX4`, `Cx5x86`, `U486..`, `TI486..`, `P24T/D`.
   At POST code 0Dh (E000:2205) an Am5x86 gets its L1 enabled early via CMOS 3Dh (F000:E4BD).
 - **3.3 BIOS identity** [V]: F000:FFF5 `03/06/96`, model FCh; INT 15h C0 table F000:E6F5 = `08 00 FC 01 00
-  74 00 00 00 00` (submodel 01, feature1 74h). newBIOS: SeaBIOS `06/23/99`, submodel 00 [S]. Old OS/driver
+  74 00 00 00 00` (submodel 01, feature1 74h). mb-8433UUD: SeaBIOS `06/23/99`, submodel 00 [S]. Old OS/driver
   date checks could differ [I].
 - **3.4 INT 15h** [V] (F000:D4E0): 24xx (A20), 4F hook (Ctrl+Alt+Gray-/Gray+ speed switch, F000:D5AE ->
   9428), 53 (APM, see 3.5), 80-91 table, 87, 88, 89, C0, C1, C2 (PS/2 mouse), E820. No E801. No INT 13h
-  extensions (no AH=41h): newBIOS is a superset.
+  extensions (no AH=41h): mb-8433UUD is a superset.
   E820 template F000:E5C0 (5 x 20 B): 0-9FC00 usable; 9FC00 len 400h reserved (1 KiB EBDA);
   F0000 len 10000h reserved (E0000 not listed); 100000 len patched at POST usable; FFFF0000 len 10000h
   reserved.
 - **3.5 APM** [V]: version 1.1 (AX=0101h, CX=7: 16/32-bit PM, CPU idle slows clock), functions 00-0Fh,
-  real data in shadow F000:DFC0. newBIOS: APM 1.2 [S].
+  real data in shadow F000:DFC0. mb-8433UUD: APM 1.2 [S].
 - **3.6 Real-board ESCD (flash 0x1D000, 351 B, ver 2.1, 3 boards)** [V]:
   - slot 0 (system board): PIC IRQ2 20-21/A0-A1; DMA4 00-0F,81-83,87,89-8B,8F,C0-DF; timer IRQ0 40-43;
     RTC IRQ8 70-71; KBC IRQ1 60/64; 61; FPU IRQ13 F0-FF; FDC IRQ6 DMA2 3F2,3F4-3F5,3F7;
@@ -205,7 +205,7 @@ SETUP DEFAULTS at the same position (row 14, col 5): only one is shown (which on
   22h/23h). ELCR bit set per level PCI IRQ (F000:1E00). coreboot does the same where relevant [S].
 - **3.10 IDE function** [V]: F000:771C: 00:12.1 cmd = 01, reg41 = 8D | 40 (secondary, from "IDE Second
   Channel Control"), reg42 = 33 (UM8886BF detected by IBC rev 0Dh, F000:F771). SET FEATURES 03h with
-  08h+mode per drive (E000:789C). coreboot/newBIOS match [S].
+  08h+mode per drive (E000:789C). coreboot/mb-8433UUD match [S].
 - **3.11 "L1 Cache Update Scheme" only acts on Cyrix CPUs** [V]: F000:7BD3 runs only for CPU types
   Cx486S/S2/DX/DX2/Cx5x86: CCR2 bit2 cleared, CR0.NW set, CCR2 |= 06, HB61 |= 02. For AMD, write-back is
   the board jumper. This explains the oracle's "no register change".
@@ -214,7 +214,7 @@ SETUP DEFAULTS at the same position (row 14, col 5): only one is shown (which on
   2), Keyboard Emulation (IBC57 bit3, default Disabled), EDO DRAM Read Speed (HB61 bit3), Alt Bit in Tag
   SRAM (HB51 bit0: 7+1 / 8+0, default 7+1), L2 Cache Update Scheme (Wr-Back), Boot Up System Speed,
   PCI/VGA Palette Snoop (CMOS 1Bh bit7), Delay Before HDD Detection (CMOS 36h bit7), ECP Mode Use DMA.
-- **3.13 Power management** (documented as not implemented in newBIOS) [V]: timers/monitors map to IBC70
+- **3.13 Power management** (documented as not implemented in mb-8433UUD) [V]: timers/monitors map to IBC70
   bits3:0 (doze), IBC80 bits3:0 (inactive), activity bits IBC70[6:5], IBC71[7:1], IBC72[0]; Video Off uses
   VBE 4F10h DPMS (signature `SMPD`) or a Tseng-specific path (searches "Tseng" in the video BIOS,
   E000:7B58); HDD standby = ATA IDLE (E3h) with count = minutes x 12, primary channel only (F000:B042).

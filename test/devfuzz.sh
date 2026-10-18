@@ -1,5 +1,5 @@
 #!/bin/bash
-# Native (no emulator) fault-injection test of newBIOS's device and CMOS handling: the SeaBIOS files of the
+# Native (no emulator) fault-injection test of mb-8433UUD's device and CMOS handling: the SeaBIOS files of the
 # ROM (IDE, floppy, PCI, option ROMs, block layer, RTC/clock, shadow, USB host controllers, hubs, HID, mass
 # storage, PnP BIOS and ESCD, and setup.c) compiled unchanged for the host under ASan/UBSan, with port I/O, MMIO, timers and
 # real-mode calls linked to device models (test/native/seabios) that inject faults: absent, floating, stuck

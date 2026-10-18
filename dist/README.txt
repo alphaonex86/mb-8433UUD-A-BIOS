@@ -1,4 +1,4 @@
-newBIOS for the Biostar MB-8433UUD-A
+mb-8433UUD for the Biostar MB-8433UUD-A
 ====================================
 
 An open replacement BIOS for the Biostar MB-8433UUD-A (UMC UM8881F/UM8886BF chipset, 486 and Am5x86
@@ -117,5 +117,5 @@ Tools
 
 License
 -------
-coreboot GPL-2.0, SeaBIOS LGPL-3.0, the newBIOS scripts and documents GPL-3.0. The full sources and the
+coreboot GPL-2.0, SeaBIOS LGPL-3.0, the mb-8433UUD scripts and documents GPL-3.0. The full sources and the
 patches are in the repository above.

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Build the Linux 6.18 i486 test kernel with an embedded busybox initramfs -> newBIOS/build/bzImage.
+# Build the Linux 6.18 i486 test kernel with an embedded busybox initramfs -> mb-8433UUD-A-BIOS/build/bzImage.
 set -euo pipefail
 here=$(dirname "$(readlink -f "$0")")
 nb=$(dirname "$(dirname "$here")")

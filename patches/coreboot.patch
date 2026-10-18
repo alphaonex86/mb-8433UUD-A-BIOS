@@ -1261,7 +1261,7 @@ index 66a1ab6ede38dbedd2b3da1d7bf95ecab91b6369..c4ca32fca3c1c7114db319c0b172342d
  pagetables_name:
  	.string "pagetables"
 diff --git a/src/cpu/486/entry16.S b/src/cpu/486/entry16.S
-index 071693b4aa2c8dc17402689319b595244c6c0161..2716a6fd57a208c0eff178d9dd5ba593275aacbc 100644
+index 071693b4aa2c8dc17402689319b595244c6c0161..ed821d42bb8eb919685d1ba38d2c3c05d024343c 100644
 --- a/src/cpu/486/entry16.S
 +++ b/src/cpu/486/entry16.S
 @@ -27,17 +27,24 @@
@@ -1324,7 +1324,7 @@ index 071693b4aa2c8dc17402689319b595244c6c0161..2716a6fd57a208c0eff178d9dd5ba593
 +1:
 +
 +	/* With CONFIG_POST_IO each post_code(c) below writes c to port 80h
-+	 * for a POST card (include/cpu/486/post_code.h, newBIOS/POSTCODES.md).
++	 * for a POST card (include/cpu/486/post_code.h, mb-8433UUD-A-BIOS/POSTCODES.md).
 +	 * post_init is empty (it used to set up COM1 for them). */
  	post_init
 -	post_code(/*POST_RESET_VECTOR_CORRECT*/ 's')
@@ -1682,15 +1682,15 @@ index c69efcde4069f7ffdd7acc944e451801c18bb3a8..87031cd26f63164c92b975625d6a0553
  void do_putchar(unsigned char byte);
 diff --git a/src/include/cpu/486/newbios_post.h b/src/include/cpu/486/newbios_post.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..07287a8f6aa085b922ccf4ca095f330dea3904bf
+index 0000000000000000000000000000000000000000..36ac09ddbf7393e54873472d5f05ca7103438701
 --- /dev/null
 +++ b/src/include/cpu/486/newbios_post.h
 @@ -0,0 +1,36 @@
 +/* SPDX-License-Identifier: GPL-2.0-only */
 +
-+/* newBIOS POST codes on port 80h for the 486 bootblock, romstage and postcar (values not used by
++/* mb-8433UUD POST codes on port 80h for the 486 bootblock, romstage and postcar (values not used by
 +   commonlib/console/post_codes.h, which covers ramstage). Only #defines: included by assembly.
-+   Meanings: newBIOS/POSTCODES.md. */
++   Meanings: mb-8433UUD-A-BIOS/POSTCODES.md. */
 +#ifndef CPU_486_NEWBIOS_POST_H
 +#define CPU_486_NEWBIOS_POST_H
 +
@@ -1948,16 +1948,16 @@ index cdee25bf7b472e92238defb7432a7891ef4bff75..f648216b7eccca8db4f166f17566319c
  struct chip_operations mainboard_ops = {
 diff --git a/src/mainboard/biostar/mb8433/newbios.c b/src/mainboard/biostar/mb8433/newbios.c
 new file mode 100644
-index 0000000000000000000000000000000000000000..19bf874201ae5cc173f51c38127acb1962a44fe0
+index 0000000000000000000000000000000000000000..37b5a62c784ad541c4d0bcbf9c5b8439ef9e3832
 --- /dev/null
 +++ b/src/mainboard/biostar/mb8433/newbios.c
 @@ -0,0 +1,171 @@
 +/* SPDX-License-Identifier: GPL-2.0-only */
 +
 +/*
-+ * Options of the newBIOS setup utility (CMOS layout in newbios_cmos.h) that coreboot applies:
++ * Options of the mb-8433UUD setup utility (CMOS layout in newbios_cmos.h) that coreboot applies:
 + * chipset features, external cache and PCI interrupt routing. The register fields are the ones the
-+ * original Award BIOS programs for the same setup values (found with newBIOS/test/oracle).
++ * original Award BIOS programs for the same setup values (found with mb-8433UUD-A-BIOS/test/oracle).
 + */
 +
 +#define __SIMPLE_DEVICE__
@@ -2027,7 +2027,7 @@ index 0000000000000000000000000000000000000000..19bf874201ae5cc173f51c38127acb19
 +	if (setting(NB_CHIPSET_AUTO))
 +		return;
 +	if (fails >= NB_BOOTFAIL_MAX) {
-+		printk(BIOS_WARNING, "newBIOS: %u unfinished POSTs, chipset setup values not used\n",
++		printk(BIOS_WARNING, "mb-8433UUD: %u unfinished POSTs, chipset setup values not used\n",
 +		       fails);
 +		return;
 +	}
@@ -2103,7 +2103,7 @@ index 0000000000000000000000000000000000000000..19bf874201ae5cc173f51c38127acb19
 +		return;		/* the manual values of setup are in use */
 +	for (i = 0; i < ARRAY_SIZE(rows) - 1 && bus >= rows[i].bus_below; i++)
 +		;
-+	printk(BIOS_INFO, "newBIOS: %u MHz bus, auto chipset timings %u\n", bus, i);
++	printk(BIOS_INFO, "mb-8433UUD: %u MHz bus, auto chipset timings %u\n", bus, i);
 +	pci_update_config8(HOST_BRIDGE, HB50_L2_CFG_0, ~0x30, rows[i].hb50);
 +	pci_update_config8(HOST_BRIDGE, HB51_L2_CFG_1, ~0xf0, rows[i].hb51);
 +	pci_update_config8(ISA_BRIDGE, IBC56_CLOCK, ~0x0f, rows[i].ibc56);
@@ -2125,12 +2125,12 @@ index 0000000000000000000000000000000000000000..19bf874201ae5cc173f51c38127acb19
 +}
 diff --git a/src/mainboard/biostar/mb8433/newbios_cmos.h b/src/mainboard/biostar/mb8433/newbios_cmos.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..e899a153fd5d1e4852390a96c40037961bb6fb5d
+index 0000000000000000000000000000000000000000..a2f04dfbca019548dbd445c1e3be01c840175a5e
 --- /dev/null
 +++ b/src/mainboard/biostar/mb8433/newbios_cmos.h
 @@ -0,0 +1,90 @@
 +/*
-+ * newBIOS CMOS layout, shared by SeaBIOS (setup utility, POST options) and coreboot (chipset options).
++ * mb-8433UUD CMOS layout, shared by SeaBIOS (setup utility, POST options) and coreboot (chipset options).
 + * build.sh copies this file into both trees. One nibble per setting: index i is in byte
 + * NB_CMOS_BASE + i / 2, low nibble for even i.
 + */

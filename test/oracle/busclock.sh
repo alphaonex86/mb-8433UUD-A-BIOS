@@ -1,6 +1,6 @@
 #!/bin/bash
 # Oracle for test/busclock.sh: chipset fields of the Auto Configuration after POST on one CPU, under the
-# original BIOS (BIOSORIGINAL.bin) and newBIOS. usage: busclock.sh <86Box CPU family> <speed> <multiplier>
+# original BIOS (BIOSORIGINAL.bin) and mb-8433UUD. usage: busclock.sh <86Box CPU family> <speed> <multiplier>
 . "$(dirname "$0")/../lib.sh"
 vm_cpu_family=$1 vm_cpu_speed=$2 vm_cpu_multi=$3
 fields() {

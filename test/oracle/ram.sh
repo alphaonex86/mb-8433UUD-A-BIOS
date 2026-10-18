@@ -1,5 +1,5 @@
 #!/bin/bash
-# Oracle for the RAM/L2 sizing: boot the original BIOS (BIOSORIGINAL.bin, a dump of the chip) and newBIOS on the same SIMM
+# Oracle for the RAM/L2 sizing: boot the original BIOS (BIOSORIGINAL.bin, a dump of the chip) and mb-8433UUD on the same SIMM
 # and L2 configuration of the fork's UM8881 model and print what each found, as a test/ram.sh line:
 # banks 0-3, L2 KB and banks, memory KB, cache, 50h&0f 52h&7f 53h&3f 61h (MA11 bits of enabled regions).
 # usage: ram.sh <bank0> <bank1> <bank2> <bank3> <L2 KB> <L2 banks>   (SIMM types: umc_hb4.c)

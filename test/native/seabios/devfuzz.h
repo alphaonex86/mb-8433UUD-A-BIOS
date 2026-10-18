@@ -1,4 +1,4 @@
-/* Device fault-injection harness for SeaBIOS (newBIOS) compiled on the host: shared by the runner (libc
+/* Device fault-injection harness for SeaBIOS (mb-8433UUD) compiled on the host: shared by the runner (libc
    side) and the device models (SeaBIOS side), so only plain C types here. */
 #ifndef DEVFUZZ_H
 #define DEVFUZZ_H

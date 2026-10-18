@@ -3,7 +3,7 @@
 # Its 1 Mbit socket leaves A17 of a 2 Mbit chip high: only the upper 128 KiB is reachable, the lower half reads as an
 # alias of it. So only that region is erased, written and verified (the image holds the BIOS in both halves, what the
 # chip reads). flashrom alone refuses (max decode 128 KiB) rather than erase the BIOS through the alias.
-# IMAGE: a 128 KiB newBIOS ROM, or a 256 KiB one (its upper half is taken).
+# IMAGE: a 128 KiB mb-8433UUD ROM, or a 256 KiB one (its upper half is taken).
 set -eu
 [ $# = 1 ] && [ -f "$1" ] || { echo "usage: bios-update IMAGE (e.g. newbios-halt1.rom)" >&2; exit 1; }
 tmp=$(mktemp -d)

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Build everything the tests need (86Box fork, newBIOS ROMs with iPXE, Linux test kernel) and run all
+# Build everything the tests need (86Box fork, mb-8433UUD ROMs with iPXE, Linux test kernel) and run all
 # tests in parallel, one 86Box per test. usage: run_all.sh [test...]   (default: all)
 set -uo pipefail
 here=$(dirname "$(readlink -f "$0")")

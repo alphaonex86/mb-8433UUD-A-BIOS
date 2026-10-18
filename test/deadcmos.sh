@@ -1,5 +1,5 @@
 #!/bin/bash
-# Dead CMOS battery: the CMOS holds garbage at power-on (RTC registers, shutdown code 0Fh, the newBIOS
+# Dead CMOS battery: the CMOS holds garbage at power-on (RTC registers, shutdown code 0Fh, the mb-8433UUD
 # block, the boot-failure counter). POST must not hang or take the CPU-only reset path: it reaches the
 # setup prompt (Halt On: All Errors), F1 continues and DOS boots, for several random CMOS images.
 . "$(dirname "$0")/lib.sh"

@@ -984,14 +984,14 @@ index 6b775e5690fc75b6e8f15f4c4c15e787894fd193..93d980169bc1645c7aa972751a093878
  extern int cpu_isa_speed;
  extern int cpu_pci_speed;
 diff --git a/src/cpu/cpu_table.c b/src/cpu/cpu_table.c
-index fc6429300c57c31b0bad4d705befb70ccb4304b3..373c7951eb18dce4d1d790cca2df2ca53340da71 100644
+index fc6429300c57c31b0bad4d705befb70ccb4304b3..2c007040b78897cd9aa42d89a6ead1b7c8215477 100644
 --- a/src/cpu/cpu_table.c
 +++ b/src/cpu/cpu_table.c
 @@ -3211,6 +3211,23 @@ const cpu_family_t cpu_families[] = {
          .name          = "Am5x86",
          .internal_name = "am5x86",
          .cpus          = (const CPU[]) {
-+            { /* 3 x 40 MHz, as the MB-8433UUD-A of the newBIOS project runs it (CLKMUL low) */
++            { /* 3 x 40 MHz, as the MB-8433UUD-A of the mb-8433UUD project runs it (CLKMUL low) */
 +                .name               = "120 (3x40)",
 +                .cpu_type           = CPU_ENH_Am486DX,
 +                .fpus               = fpus_internal,
@@ -1712,7 +1712,7 @@ index bd122a6ceccbb70aafb1d905b0b7e3d6ba6d5db6..d5e47085ce319bd5526678fb74d48550
      pic2_init();
      dma16_init();
 diff --git a/src/machine/m_at_socket3_pci.c b/src/machine/m_at_socket3_pci.c
-index bf269c3c5da5e52a4189703c15ed406ff0d3ef68..e3c3ee7ce33f73a790330e449618f8321a3ccd1e 100644
+index bf269c3c5da5e52a4189703c15ed406ff0d3ef68..63a39df3c5ff35406eafabf945cdf722d81dce17 100644
 --- a/src/machine/m_at_socket3_pci.c
 +++ b/src/machine/m_at_socket3_pci.c
 @@ -15,6 +15,7 @@
@@ -1736,7 +1736,7 @@ index bf269c3c5da5e52a4189703c15ed406ff0d3ef68..e3c3ee7ce33f73a790330e449618f832
  
  /* ALi M1429G */
 +/* The board's chip is an Intel P28F001BX-T. BOX86_FLASH: w29c010 (the chip 86Box used before), sst39sf010 (a JEDEC
-+   chip newBIOS does not know, as an SST39SF010A put in its place), w49f002a (2 Mbit: a 256 KiB image, its lower
++   chip mb-8433UUD does not know, as an SST39SF010A put in its place), w49f002a (2 Mbit: a 256 KiB image, its lower
 +   half decoded at FFFC0000 by the UM8886, 57h bits 7-6). */
 +static const device_t *
 +board_flash_device(void)

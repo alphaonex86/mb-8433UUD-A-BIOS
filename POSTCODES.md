@@ -1,6 +1,6 @@
 # POST codes (port 80h)
 
-newBIOS writes a code to I/O port 80h when each step of the power-on self test **starts**, for an
+mb-8433UUD writes a code to I/O port 80h when each step of the power-on self test **starts**, for an
 ISA or PCI POST card. If the board hangs, the card keeps showing the step that did not finish. Every
 code is unique. Both ROMs (`out/newbios.rom` and `out/newbios-debug.rom`) send the same codes; the
 debug ROM also logs the steps in text on COM1 (115200 8N1).

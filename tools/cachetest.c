@@ -1,6 +1,6 @@
 /*
  * cachetest: is the L2 cache of the MB-8433UUD-A real and working? Run it under Linux with each BIOS
- * (the original Award and newBIOS) and compare.
+ * (the original Award and mb-8433UUD) and compare.
  *  - the UM8881F registers the BIOS left (50h: L2 enable/size/banks/write-back, 55h: BIOS cacheable),
  *    read from /sys (root);
  *  - memory read speed by block size: the 486's L1 (8 or 16 KB) and a working L2 show as steps; a fake

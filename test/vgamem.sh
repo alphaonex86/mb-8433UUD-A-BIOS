@@ -30,7 +30,7 @@ memory = $3}"
 run=$vm_dir/run                                     # this run's results, one file per card and size
 rm -rf "$run"
 mkdir -p "$run"
-# cards that newBIOS does not run (the original BIOS does): CGA-class without a video BIOS (SeaBIOS has no CGA INT 10h),
+# cards that mb-8433UUD does not run (the original BIOS does): CGA-class without a video BIOS (SeaBIOS has no CGA INT 10h),
 # and two whose video BIOS leaves the screen blank under SeaBIOS
 unsupported=" cga cga_pravetz compaq_cga compaq_cga_2 plantronics quadcolor ogc nga genius sigma400 v6355d wy700 im1024
 pgc incolor et2000 oti037c "

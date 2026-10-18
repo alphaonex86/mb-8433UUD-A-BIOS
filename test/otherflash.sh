@@ -1,5 +1,5 @@
 #!/bin/bash
-# A JEDEC flash chip newBIOS does not know (86Box SST39SF010, as a W49F002A or SST39SF010A on the board): the POST
+# A JEDEC flash chip mb-8433UUD does not know (86Box SST39SF010, as a W49F002A or SST39SF010A on the board): the POST
 # runs, its ID probe leaves the chip readable (the reboot after the setup's save fetches from it), no ESCD written.
 . "$(dirname "$0")/lib.sh"
 mkdir -p "$vm_dir"
