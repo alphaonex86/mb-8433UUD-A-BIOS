@@ -169,6 +169,17 @@ vm_stop() {
   echo "PASS [$vm_name]"
 }
 
+usb_stick() {  # path -> a sparse copy of the board's USB stick (LILO, Linux, FreeDOS; test/images/make_usb_img.sh),
+               # unpacked once from test/images/usb.img.tar.xz
+  local img=$nb/test/images/usb.img tmp
+  if [ ! -f "$img" ]; then   # unpacked aside, then renamed: tests run in parallel
+    tmp=$(mktemp -d "$nb/test/images/.unpack.XXXXXX")
+    tar -C "$tmp" -xJf "$img.tar.xz" && mv -f "$tmp/usb.img" "$img"
+    rm -r "$tmp"
+  fi
+  cp --sparse=always "$img" "$1"
+}
+
 dos_disk() {  # path, [extra file] -> FreeDOS 1.3 disk whose FDAUTO.BAT runs ver, mem, the extra file
               # (copied to C:\) and prints DOS-TEST-OK
   local part=$((63 * 512))   # FAT16 partition at LBA 63, CHS 65/16/63
@@ -197,7 +208,7 @@ test_linux() {  # build/bzImage, the test Linux, rebuilt when its init or kernel
     || "$nb/test/linux/build.sh" > /dev/null || fail "test Linux does not build"
 }
 
-etherboot=$nb/test/roms/etherboot-5.4.4-rtl8139.rom   # the operator's card ROM (first 32 KiB of its chip, not published)
+etherboot=$nb/test/roms/etherboot-5.4.4-rtl8139.rom   # the operator's card ROM (first 32 KiB of its chip, GPL)
 
 ipxe_rom=$nb/build/nic-rtl8139-ipxe-64k.rom   # iPXE as the card's socket ROM (tools/build_ipxe.sh)
 

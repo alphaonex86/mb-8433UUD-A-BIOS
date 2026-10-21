@@ -2,12 +2,12 @@
 # The board as the operator runs it: no AT keyboard (its 8042 then hangs on the first byte sent to the keyboard,
 # IBF stays set), a USB keyboard and the USB stick image on the VT6212 card. Everything works from the USB
 # keyboard: F1 at the fresh-CMOS error, DEL, each setup page and back, F10 save, the boot menu, LILO ("dos"
-# typed), MS-DOS ("ver"), Ctrl+Alt+Del (the reset starts within 3 s: each 8042 wait took 500 ms, 5 s in all),
+# typed), FreeDOS ("echo usbkey"), Ctrl+Alt+Del (the reset starts within 3 s: each 8042 wait took 500 ms, 5 s in all),
 # then LILO's countdown runs out and Linux finds the disk on EHCI and the keyboard on its UHCI companion.
 # With no keyboard at all, the POST errors do not halt the boot (nobody could press F1).
 . "$(dirname "$0")/lib.sh"
 mkdir -p "$vm_dir"
-cp --sparse=always "$nb/../HDD-build/output/images/usb.img" "$vm_dir/usb.img"
+usb_stick "$vm_dir/usb.img"
 export BOX86_USB_DISK=$vm_dir/usb.img BOX86_USB_KBD=1 BOX86_KBD_ABSENT=1
 key() { vm_cmd usbkey "$@"; }
 wait_gone() {  # regex, timeout: the screen no longer shows it
@@ -42,10 +42,10 @@ key 29                                              # ESC: boot menu
 vm_wait_text "Select boot device" 10
 key 1e                                              # 1: the USB stick
 vm_wait_text "boot:" 60
-key 07 12 16 28                                     # d o s Enter
-vm_wait_text 'C:\\>' 90
-key 19 08 15 28                                     # v e r Enter
-vm_wait_text "MS-DOS Version 6" 10
+key 07 12 16 28                                     # d o s Enter: FreeDOS
+vm_wait_text "DOS-TEST-OK" 90
+key 08 06 0b 12 2c 18 16 05 0e 08 1c 28             # echo usbkey Enter
+vm_wait_text "^usbkey" 10
 resets=$(grep -c '^RESET' "$vm/post.log")
 t=$SECONDS
 key 054c                                            # Ctrl+Alt+Del
@@ -63,7 +63,7 @@ grep -aq " sda: sda1 sda2 sda3 sda4" "$vm/serial.log" || fail "Linux: no USB dis
 vm_stop
 
 # No keyboard at all (fresh CMOS, Halt On: All Errors): nobody could press F1, the errors show and the boot goes on
-cp --sparse=always "$nb/../HDD-build/output/images/usb.img" "$vm_dir/usb.img"
+usb_stick "$vm_dir/usb.img"
 unset BOX86_USB_KBD
 vm_start nokbd "$rom" ""
 vm_wait_text "boot continues \(no keyboard\)" 90

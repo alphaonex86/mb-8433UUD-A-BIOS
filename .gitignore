@@ -5,7 +5,10 @@
 # Local VMs (run_86box.sh, tests)
 /vm/
 /test/vm/
-# Not redistributable: the board's original Award BIOS dump, NIC boot ROMs
+# Unpacked by the tests from test/images/usb.img.tar.xz
+/test/images/usb.img
+/test/images/.unpack.*
+# Not redistributable: the board's original Award BIOS dump; the operator's NIC EEPROM (its MAC address)
 /BIOSORIGINAL.bin
-/test/roms/
+/test/roms/rtl8139-operator-eeprom.txt
 __pycache__/

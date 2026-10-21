@@ -188,6 +188,8 @@ the original BIOS.
   downloads GCC and binutils). `sources/coreboot_486` is patched in place (`patches/coreboot.patch`),
   `build/seabios` is a clone of `sources/seabios_486` + `patches/seabios.patch`; SeaBIOS options in
   `seabios.config`, coreboot options in `configs/mb8433_author.config` + `build.sh`, CMOS layout `cmos.h`.
+  `test/images/usb.img.tar.xz` is the board's USB stick (LILO, Linux, FreeDOS in place of MS-DOS; sparse, 62 GB
+  unpacked to ~150 MB) made by `test/images/make_usb_img.sh` from the HDD project; the tests unpack it when missing.
   The patches are the source of truth: missing trees are recreated from them and they are re-exported
   after each build.
 - Host: a Linux with gcc, make, git, curl, python3, unzip, nasm (tests), cmake and Qt6 (86Box GUI).

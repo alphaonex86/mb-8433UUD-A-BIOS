@@ -4,7 +4,7 @@
 # with a USB keyboard, and with no keyboard at all (HALT_ON=1 ROM: Halt On: No Errors).
 . "$(dirname "$0")/lib.sh"
 mkdir -p "$vm_dir"
-cp --sparse=always "$nb/../HDD-build/output/images/usb.img" "$vm_dir/usb.img"
+usb_stick "$vm_dir/usb.img"
 export BOX86_USB_DISK=$vm_dir/usb.img BOX86_KBD_ABSENT=1
 lilo_runs_out() {
   vm_wait_text "boot:" 120
