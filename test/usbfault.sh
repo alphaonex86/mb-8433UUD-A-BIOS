@@ -1,7 +1,8 @@
 #!/bin/bash
-# USB faults injected by the 86Box UHCI model (BOX86_USB_FAULT), with a FreeDOS USB disk and no IDE disk: the POST
+# USB faults injected by the 86Box VT6212 model (BOX86_USB_FAULT), with a FreeDOS USB disk and no IDE disk: the POST
 # always finishes and the boot fails with a message instead of hanging.
-#  kbd-stall   the USB keyboard stalls its requests, no PS/2 keyboard: keyboard error, the F1 prompt
+#  kbd-stall   the USB keyboard stalls its requests, no PS/2 keyboard: keyboard error, the boot goes on (no F1 prompt:
+#              no keyboard could answer it) and DOS starts
 #  disk-nak    the disk never sends data       disk-stall  it stalls the data of READ
 #  disk-csw    its CSWs have a bad signature   disk-gone   unplugged 3 s after its first READ (DOS boot), then
 #              Ctrl+Alt+Del: the POST finishes without it
@@ -13,8 +14,9 @@ start() {  # fault
 }
 export BOX86_KBD_POWERON_MS=600000                 # no PS/2 keyboard
 start kbd-stall
-vm_wait_text "Press F1 to continue, DEL to enter SETUP" 120
+vm_wait_text "boot continues \\(no keyboard\\)" 120
 vm_expect "Keyboard error or no keyboard present"
+vm_wait_text "DOS-TEST-OK" 120
 vm_kill
 unset BOX86_KBD_POWERON_MS
 for f in disk-nak disk-stall disk-csw; do

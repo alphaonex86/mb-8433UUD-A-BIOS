@@ -1,5 +1,5 @@
 #!/bin/bash
-# USB keyboard only (86Box UHCI, VIA 1106:3038 like the operator's card; low-speed HID boot keyboard; the PS/2
+# USB keyboard only (86Box VT6212 like the operator's card: EHCI hands it to its UHCI companion; low-speed HID boot keyboard; the PS/2
 # keyboard never answers): no keyboard error at POST, F1 and DEL typed on it work, the setup's USB page lists it,
 # Ctrl+Alt+Del on it reboots. Then both keyboards plugged (the AT one also waking up after the POST's 3 s): each
 # types, one after the other.

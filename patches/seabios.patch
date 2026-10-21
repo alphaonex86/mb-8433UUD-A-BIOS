@@ -1693,10 +1693,65 @@ index 14738d9f39b2e8b7edb0a136c326c592f23bc7d6..76506e55816ef81613e49cb3190c3f3c
  floppy_drive_specify(void)
  {
 diff --git a/src/hw/ps2port.c b/src/hw/ps2port.c
-index 9b099e827cb0bf3975066fdef63d86a035d3d604..0dcc7fecbd2fa0ac0be7460e0b790a459e8fcdfd 100644
+index 9b099e827cb0bf3975066fdef63d86a035d3d604..0f58ca131996a0ae270b8d521d24d8b35360cfb8 100644
 --- a/src/hw/ps2port.c
 +++ b/src/hw/ps2port.c
-@@ -446,42 +446,100 @@ ps2_check_event(void)
+@@ -24,34 +24,42 @@
+ 
+ #define I8042_BUFFER_SIZE       16
+ 
++// Without a keyboard the board's 8042 hangs once a byte was sent to it (its input buffer stays full). After one
++// timeout every wait fails at once while that lasts: each one took 500 ms with interrupts off (INT 16h, reboot).
++u8 KbcHung VARLOW;
++
+ static int
+-i8042_wait_read(void)
++i8042_wait(u8 ready_mask, u8 ready_value)
+ {
+-    dprintf(7, "i8042_wait_read\n");
+     int i;
+     for (i=0; i<I8042_CTL_TIMEOUT; i++) {
+         u8 status = inb(PORT_PS2_STATUS);
+-        if (status & I8042_STR_OBF)
++        if ((status & ready_mask) == ready_value) {
++            if (ready_mask == I8042_STR_IBF)
++                SET_LOW(KbcHung, 0);
+             return 0;
++        }
++        if (GET_LOW(KbcHung))
++            return -1;
+         udelay(50);
+     }
++    SET_LOW(KbcHung, 1);
+     warn_timeout();
+     return -1;
+ }
+ 
++static int
++i8042_wait_read(void)
++{
++    dprintf(7, "i8042_wait_read\n");
++    return i8042_wait(I8042_STR_OBF, I8042_STR_OBF);
++}
++
+ static int
+ i8042_wait_write(void)
+ {
+     dprintf(7, "i8042_wait_write\n");
+-    int i;
+-    for (i=0; i<I8042_CTL_TIMEOUT; i++) {
+-        u8 status = inb(PORT_PS2_STATUS);
+-        if (! (status & I8042_STR_IBF))
+-            return 0;
+-        udelay(50);
+-    }
+-    warn_timeout();
+-    return -1;
++    return i8042_wait(I8042_STR_IBF, 0);
+ }
+ 
+ static int
+@@ -446,42 +454,100 @@ ps2_check_event(void)
   * Setup
   ****************************************************************/
  
@@ -1807,7 +1862,7 @@ index 9b099e827cb0bf3975066fdef63d86a035d3d604..0dcc7fecbd2fa0ac0be7460e0b790a45
      }
  
  
-@@ -496,25 +554,23 @@ ps2_keyboard_setup(void *data)
+@@ -496,25 +562,23 @@ ps2_keyboard_setup(void *data)
          if (timer_check(end)) {
              if (spinupdelay)
                  warn_timeout();
@@ -1838,16 +1893,16 @@ index 9b099e827cb0bf3975066fdef63d86a035d3d604..0dcc7fecbd2fa0ac0be7460e0b790a45
  
      // Keyboard Mode: disable mouse, scan code convert, enable kbd IRQ
      Ps2ctr = (I8042_CTR_AUXDIS | I8042_CTR_XLATE
-@@ -523,9 +579,28 @@ ps2_keyboard_setup(void *data)
+@@ -523,9 +587,28 @@ ps2_keyboard_setup(void *data)
      /* Enable keyboard */
      ret = ps2_kbd_command(ATKBD_CMD_ENABLE, NULL);
      if (ret)
 -        return;
 +        return kbd_fail(KF_ENABLE, -1);
-+
+ 
 +    return 0;
 +}
- 
++
 +// After power-on the controller and the keyboard may still be in their self tests: retry for 3 s, as
 +// the original BIOS waits (a cold boot reported no keyboard on the real board, a reset found it).
 +// A keyboard still silent then is left enabled, as the original BIOS does: one that wakes up later types.
@@ -1909,7 +1964,7 @@ index 7f9f440342c5d1f204beef185c87e32ce9ecd7e3..02a4b300dbb5858046637a5bde78e42f
  {
      u16 port = GET_GLOBAL(TimerPort);
 diff --git a/src/hw/usb-ehci.c b/src/hw/usb-ehci.c
-index b1f091a5fd3f8741b486e6c1cf39ee9d38346c6e..b40f39ba58a1b242aef47aa0a7a267ed0995ace0 100644
+index b1f091a5fd3f8741b486e6c1cf39ee9d38346c6e..f3f47589e6d71b9203a57a2baae690359caec083 100644
 --- a/src/hw/usb-ehci.c
 +++ b/src/hw/usb-ehci.c
 @@ -187,7 +187,7 @@ ehci_waittick(struct usb_ehci_s *cntl)
@@ -1921,17 +1976,23 @@ index b1f091a5fd3f8741b486e6c1cf39ee9d38346c6e..b40f39ba58a1b242aef47aa0a7a267ed
  
      struct ehci_qh *start = cntl->async_qh;
      struct ehci_qh *pos = start;
-@@ -276,7 +276,9 @@ configure_ehci(void *data)
-     PendingEHCI--;
+@@ -273,10 +273,13 @@ configure_ehci(void *data)
  
-     // Find devices
+     // Set default of high speed for root hub.
+     writel(&cntl->regs->configflag, 1);
+-    PendingEHCI--;
+ 
+-    // Find devices
++    // Find devices. The companion controllers wait until then: a low or full speed device is handed to them
++    // during this scan, and theirs could end before (a USB keyboard missed after a warm boot).
 +    post_code(POST_USB_EHCI_PORTS);
      int count = check_ehci_ports(cntl);
 +    post_code(POST_USB_EHCI_DONE);
++    PendingEHCI--;
      ehci_free_pipes(cntl);
      if (count)
          // Success
-@@ -292,6 +294,17 @@ fail:
+@@ -292,6 +295,17 @@ fail:
      free(cntl);
  }
  
@@ -1949,7 +2010,7 @@ index b1f091a5fd3f8741b486e6c1cf39ee9d38346c6e..b40f39ba58a1b242aef47aa0a7a267ed
  static void
  ehci_controller_setup(struct pci_device *pci)
  {
-@@ -317,9 +330,21 @@ ehci_controller_setup(struct pci_device *pci)
+@@ -317,9 +331,21 @@ ehci_controller_setup(struct pci_device *pci)
  
      dprintf(1, "EHCI init on dev %pP (regs=%p)\n", pci, cntl->regs);
  
@@ -1973,7 +2034,7 @@ index b1f091a5fd3f8741b486e6c1cf39ee9d38346c6e..b40f39ba58a1b242aef47aa0a7a267ed
  
      run_thread(configure_ehci, cntl);
  }
-@@ -389,7 +414,7 @@ ehci_alloc_intr_pipe(struct usbdevice_s *usbdev
+@@ -389,7 +415,7 @@ ehci_alloc_intr_pipe(struct usbdevice_s *usbdev
      struct usb_ehci_s *cntl = container_of(
          usbdev->hub->cntl, struct usb_ehci_s, usb);
      int frameexp = usb_get_period(usbdev, epdesc);
@@ -1982,7 +2043,7 @@ index b1f091a5fd3f8741b486e6c1cf39ee9d38346c6e..b40f39ba58a1b242aef47aa0a7a267ed
  
      if (frameexp > 10)
          frameexp = 10;
-@@ -460,7 +485,7 @@ ehci_realloc_pipe(struct usbdevice_s *usbdev, struct usb_pipe *upipe
+@@ -460,7 +486,7 @@ ehci_realloc_pipe(struct usbdevice_s *usbdev, struct usb_pipe *upipe
          return ehci_alloc_intr_pipe(usbdev, epdesc);
      struct usb_ehci_s *cntl = container_of(
          usbdev->hub->cntl, struct usb_ehci_s, usb);
@@ -1991,7 +2052,7 @@ index b1f091a5fd3f8741b486e6c1cf39ee9d38346c6e..b40f39ba58a1b242aef47aa0a7a267ed
  
      struct usb_pipe *usbpipe = usb_get_freelist(&cntl->usb, eptype);
      if (usbpipe) {
-@@ -550,7 +575,7 @@ ehci_send_pipe(struct usb_pipe *p, int dir, const void *cmd
+@@ -550,7 +576,7 @@ ehci_send_pipe(struct usb_pipe *p, int dir, const void *cmd
      if (! CONFIG_USB_EHCI)
          return -1;
      struct ehci_pipe *pipe = container_of(p, struct ehci_pipe, pipe);
@@ -2344,6 +2405,24 @@ index 887f2064cf3a5b9b1a37f5e0f84943840d73535d..caee9acb82df6e0971875bdd7d5e4b16
  // Common information for usb controllers.
  struct usb_s {
      struct usb_pipe *freelist;
+diff --git a/src/kbd.c b/src/kbd.c
+index 15e5ae789cd3a8c0aefb0f9c8d9db054e973445d..8bfcab3d31e61f9c5f90be1f607e042098d6207f 100644
+--- a/src/kbd.c
++++ b/src/kbd.c
+@@ -233,10 +233,9 @@ set_leds(void)
+     if (shift_flags == led_flags)
+         return;
+ 
+-    int ret = kbd_command(ATKBD_CMD_SETLEDS, &shift_flags);
+-    if (ret)
+-        // Error
+-        return;
++    // Not retried on failure: without a keyboard the board's 8042 hangs, and each try then takes 500 ms with
++    // interrupts off on every INT 16h call (LILO's countdown froze).
++    kbd_command(ATKBD_CMD_SETLEDS, &shift_flags);
+     kbd_led = (kbd_led & ~0x07) | shift_flags;
+     SET_BDA(kbd_led, kbd_led);
+ }
 diff --git a/src/malloc.c b/src/malloc.c
 index 29ec22ccc2a28981c52784d39edb19c55a9766bb..37c75a51f3ceed59fcc30de23faea5e853631fb8 100644
 --- a/src/malloc.c
@@ -4816,10 +4895,10 @@ index 3a179b5be98d884fa604cc77a1469156cc4fbc76..917e64e53ac485011bd61daf189343e4
      set_equipment_flags(0xc000, count << 14);
 diff --git a/src/setup.c b/src/setup.c
 new file mode 100644
-index 0000000000000000000000000000000000000000..c90abb1a59de345a416c1a85fa90e54f81d4b7ea
+index 0000000000000000000000000000000000000000..fbe14e2f2cc10580afe819f191f9a5b9a6a864b5
 --- /dev/null
 +++ b/src/setup.c
-@@ -0,0 +1,5619 @@
+@@ -0,0 +1,5622 @@
 +// Award-style CMOS setup utility (DEL during POST), the settings it keeps in CMOS (newbios_cmos.h)
 +// and the POST options SeaBIOS applies from them.
 +//
@@ -5218,7 +5297,10 @@ index 0000000000000000000000000000000000000000..c90abb1a59de345a416c1a85fa90e54f
 +            errors |= post_error(ERR_DISK, "Hard disk(s) fail (80)");
 +            break;
 +        }
-+    if (!PS2KeyboardOK && !usb_kbd_active()) {
++    if (!PS2KeyboardOK)
++        wait_threads();                     // the PS/2 retries and the USB keyboard may still be in their threads
++    int no_keyboard = !PS2KeyboardOK && !usb_kbd_active();
++    if (no_keyboard) {
 +        char why[48], line[80];
 +        ps2_kbd_failure(why, sizeof(why));
 +        snprintf(line, sizeof(line), "Keyboard error or no keyboard present%s", why);
@@ -5236,9 +5318,9 @@ index 0000000000000000000000000000000000000000..c90abb1a59de345a416c1a85fa90e54f
 +        printf("The previous POST did not finish, its last POST code: %02X\n", PrevPostCode);
 +    if (ChipsetFallback)
 +        printf("Chipset setup values not used after %d unfinished POSTs.\n", ChipsetFallback);
-+    if (!(errors & halts[Setting[NB_HALT_ON]])) {
++    if (!(errors & halts[Setting[NB_HALT_ON]]) || no_keyboard) {   // no keyboard: nobody could press F1
 +        if (errors) {
-+            printf("WARNING: POST errors above, boot continues (Halt On)\n");
++            printf("WARNING: POST errors above, boot continues (%s)\n", no_keyboard ? "no keyboard" : "Halt On");
 +            PostWarned = 1;   // the boot prompt then lasts 3 s, time to read them (not 3 s more before it)
 +        }
 +        return;

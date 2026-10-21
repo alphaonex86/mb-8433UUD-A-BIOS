@@ -1,5 +1,5 @@
 #!/bin/bash
-# Boot from a USB disk (86Box UHCI, bulk-only mass storage; no IDE disk): FreeDOS boots from it. Then Ctrl+Alt+Del
+# Boot from a USB disk (86Box VT6212 EHCI, high-speed bulk-only mass storage; no IDE disk): FreeDOS boots from it. Then Ctrl+Alt+Del
 # while the USB controller runs the schedule DOS's BIOS calls left (the operator's GRUB2-from-USB case: a warm
 # boot does not reset the card): the POST finishes and boots from USB again, twice. With an IDE disk too, the
 # default order (Hard Disk, USB, ...) boots the IDE disk, and "1st Boot Device: USB" the USB disk.

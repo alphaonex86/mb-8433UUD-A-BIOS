@@ -20,6 +20,7 @@ vm_start() {  # name, rom, extra config lines; RAM: $vm_ram (default 32 MB in ba
               # $vm_gfx: the video card (default tgui9440_pci)
   vm_name=$1
   vm=$vm_dir
+  while [ "$(pgrep -cx 86Box)" -ge "$(nproc)" ]; do sleep 0.5; done   # one emulator per core: timing checks
   rm -rf "$vm/nvr" "$vm/post.log"   # fresh CMOS and flash, POST codes of this boot only
   [ -z "${vm_nvr:-}" ] || { mkdir -p "$vm/nvr"; cp "$vm_nvr" "$vm/nvr/84xxuuda.nvr"; }   # given CMOS contents
   mkdir -p "$vm/roms/machines/84xxuuda"
